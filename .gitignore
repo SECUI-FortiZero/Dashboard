@@ -1,0 +1,32 @@
+# Python
+###########
+# 가상환경 폴더
+backend/.venv/
+# 파이썬 캐시 파일
+**/__pycache__/
+*.pyc
+
+# Terraform
+#############
+# Terraform 자동 생성 파일 (버전관리 금지)
+**/.terraform/
+*.tfstate
+*.tfstate.*
+
+# Terraform Lock 파일은 커밋 권장 (provider 버전 고정)
+# 따라서 아래 라인은 주석 처리 또는 삭제
+# **/.terraform.lock.hcl
+
+# OS
+######
+# macOS 시스템 파일
+.DS_Store
+# Windows 썸네일 파일
+Thumbs.db
+
+# IDE
+#######
+# VSCode 설정 폴더
+.vscode/
+# JetBrains IDE 설정 폴더
+.idea/
