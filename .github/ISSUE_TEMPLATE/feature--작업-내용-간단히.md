@@ -1,18 +1,10 @@
 ---
-name: 'feature: issue template'
+name: 'feature: 작업 내용 간단히'
 about: 이번 작업에 대해서 간단하게 작성해주세요.
 title: ''
 labels: ''
 assignees: ''
 
----
-
----
-name: Feature Request
-about: 새로운 기능 개발 요청
-title: "[Feature] "
-labels: enhancement
-assignees: ''
 ---
 
 ## ✨ 설명
