@@ -1,5 +1,5 @@
 ---
-name: 'feature: 작업 내용 간단히'
+name: 'feature: 작업 내용'
 about: 이번 작업에 대해서 간단하게 작성해주세요.
 title: ''
 labels: ''
