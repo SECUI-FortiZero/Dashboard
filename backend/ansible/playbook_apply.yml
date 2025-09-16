@@ -1,0 +1,41 @@
+---
+- name: Apply iptables rules
+  hosts: firewall_servers
+  become: yes
+  tasks:
+    - name: Flush all existing rules
+      iptables:
+        flush: yes
+
+    - name: Set default policies
+      iptables:
+        policy: "{{ item.policy }}"
+        chain: "{{ item.chain }}"
+      with_items:
+        - { chain: 'INPUT', policy: 'DROP' }
+        - { chain: 'FORWARD', policy: 'DROP' }
+        - { chain: 'OUTPUT', policy: 'ACCEPT' }
+
+    - name: Allow established and related connections
+      iptables:
+        chain: INPUT
+        ctstate: ESTABLISHED,RELATED
+        jump: ACCEPT
+        comment: "Allow all established connections"
+
+    - name: Allow loopback traffic
+      iptables:
+        chain: INPUT
+        in_interface: lo
+        jump: ACCEPT
+        comment: "Allow loopback connections"
+
+    - name: Apply rules from policy file
+      iptables:
+        chain: INPUT
+        protocol: "{{ item.protocol | default('all') }}"
+        destination_port: "{{ item.port | default(omit) }}"
+        source: "{{ item.source_ip | default(omit) }}"
+        jump: "{{ item.action | default('ACCEPT') }}"
+        comment: "{{ item.comment | default('') }}"
+      loop: "{{ rules_from_api }}"
