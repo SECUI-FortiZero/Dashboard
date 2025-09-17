@@ -2,6 +2,8 @@
 - name: Apply iptables rules
   hosts: firewall_servers
   become: yes
+  gather_facts: no
+
   tasks:
     - name: Flush all existing rules
       iptables:
