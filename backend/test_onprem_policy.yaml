@@ -1,0 +1,7 @@
+rules:
+  - platform: on-premise
+    protocol: tcp
+    port: 80
+    source_ip: "192.168.5.500/32"
+    action: ACCEPT
+    comment: "Allow HTTP from test machine"

@@ -4,8 +4,14 @@ import tempfile
 
 def apply_rules(rules):
     """Ansible 플레이북을 실행하여 iptables 규칙을 적용합니다."""
+    
+    # 현재 파일의 위치를 기준으로 프로젝트 루트 경로를 계산합니다.
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    
+    # 프로젝트 루트로부터의 절대 경로를 만듭니다.
+    playbook_path = os.path.join(project_root, 'ansible', 'playbook_apply.yml')
+
     with tempfile.TemporaryDirectory() as tmpdir:
-        # .env 파일의 정보를 바탕으로 inventory 파일 동적 생성
         inventory_content = f"""
 [firewall_servers]
 {os.getenv('ONPREM_HOST')} ansible_user={os.getenv('ONPREM_USER')} ansible_ssh_private_key_file={os.path.expanduser(os.getenv('ONPREM_SSH_KEY_PATH'))}
@@ -14,7 +20,7 @@ def apply_rules(rules):
         with open(inventory_path, 'w') as f:
             f.write(inventory_content)
 
-        playbook_path = 'ansible/playbook_apply.yml'
+        # playbook_path = 'ansible/playbook_apply.yml' # <--- 이 줄을 삭제하세요!
         
         runner = ansible_runner.run(
             private_data_dir=tmpdir,
@@ -22,17 +28,10 @@ def apply_rules(rules):
             inventory=inventory_path,
             extravars={'rules_from_api': rules}
         )
-
         if runner.rc != 0:
             raise Exception(f"Ansible playbook failed. Status: {runner.status}")
-        
         return {"status": "success", "changed_hosts": runner.stats.get('ok', {})}
 
 def fetch_rules():
-    """Ansible을 사용하여 현재 iptables 규칙을 가져옵니다."""
-    # (실제 구현 시에는 playbook_fetch.yml을 만들고 iptables-save 결과를 파싱해야 합니다)
-    # 여기서는 개념 설명을 위해 더미 데이터를 반환합니다.
-    return [
-        {"platform": "on-premise", "rule": "-p tcp -m tcp --dport 22 -j ACCEPT", "comment": "SSH access"},
-        {"platform": "on-premise", "rule": "-p tcp -m tcp --dport 80 -j ACCEPT", "comment": "HTTP access"}
-    ]
+    # 실제 구현 시에는 iptables-save 결과를 파싱하는 로직이 필요합니다.
+    return [{"platform": "on-premise", "rule": "-p tcp -m tcp --dport 22 -j ACCEPT"}]
