@@ -1,0 +1,12 @@
+default:
+  input: DROP
+  forward: DROP
+  output: ACCEPT
+
+rules:
+  - platform: on-premise
+    protocol: tcp
+    port: 80
+    source_ip: "192.168.5.50/32"
+    action: ACCEPT
+    comment: "Allow HTTP from test machine"

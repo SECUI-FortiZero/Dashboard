@@ -1,13 +1,13 @@
 from flask import Flask
 
 def create_app():
+    # Flask 앱 객체 생성
     app = Flask(__name__)
 
-    # 라우트 블루프린트 등록
+    # routes.py에서 bp 라는 이름의 Blueprint를 가져옵니다.
     from .routes import bp as main_bp
+    
+    # 앱에 Blueprint를 등록합니다. 이제 @bp.route로 정의된 모든 경로가 활성화됩니다.
     app.register_blueprint(main_bp)
-
-    # 필요 시 여기서 DB, CORS, 로거, 설정 등 초기화
-    # 예) from .database import init_db; init_db(app)
 
     return app

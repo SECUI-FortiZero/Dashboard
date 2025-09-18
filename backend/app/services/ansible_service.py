@@ -1,38 +1,64 @@
 import ansible_runner
 import os
 import tempfile
+from dotenv import load_dotenv
 
-def apply_rules(rules):
-    """Ansible 플레이북을 실행하여 iptables 규칙을 적용합니다."""
+load_dotenv()
+
+def apply_rules(rules, default_policy=None, policy_name="unnamed"):
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    playbook_path = os.path.join(project_root, 'ansible', 'playbook_apply.yml')
+
+    host = os.getenv('ONPREM_HOST', '192.168.5.10')
+    user = os.getenv('ONPREM_USER', 'linux')
+    key  = os.getenv('ONPREM_SSH_KEY_PATH', '/home/soobin/.ssh/id_rsa')
+    port = os.getenv('ONPREM_PORT', '22')
+
     with tempfile.TemporaryDirectory() as tmpdir:
-        # .env 파일의 정보를 바탕으로 inventory 파일 동적 생성
+        # 디버그: runner가 실제 쓰는 인벤토리 내용 확인
         inventory_content = f"""
 [firewall_servers]
-{os.getenv('ONPREM_HOST')} ansible_user={os.getenv('ONPREM_USER')} ansible_ssh_private_key_file={os.path.expanduser(os.getenv('ONPREM_SSH_KEY_PATH'))}
+{host} ansible_user={user} ansible_port={port} ansible_ssh_private_key_file={key}
 """
+        print("=== INVENTORY ===")
+        print(inventory_content)
+
         inventory_path = os.path.join(tmpdir, 'inventory.ini')
         with open(inventory_path, 'w') as f:
             f.write(inventory_content)
 
-        playbook_path = 'ansible/playbook_apply.yml'
-        
-        runner = ansible_runner.run(
+        extravars = {
+            'rules_from_api': rules,
+            'default_policy': default_policy or {},
+            'policy_name': policy_name,
+            'ansible_become': True,
+            'ansible_become_method': 'sudo',
+            'ansible_become_password': os.getenv('ONPREM_BECOME_PASS', '')
+        }
+        print("=== EXTRAVARS ===")
+        print(extravars)
+
+        r = ansible_runner.run(
             private_data_dir=tmpdir,
             playbook=playbook_path,
             inventory=inventory_path,
-            extravars={'rules_from_api': rules}
+            extravars=extravars
         )
 
-        if runner.rc != 0:
-            raise Exception(f"Ansible playbook failed. Status: {runner.status}")
-        
-        return {"status": "success", "changed_hosts": runner.stats.get('ok', {})}
+        if r.rc != 0:
+            # stdout 파일 경로 구성 (runner ident 기준)
+            ident = getattr(r, 'ident', None) or 'unknown'
+            stdout_path = os.path.join(tmpdir, 'artifacts', ident, 'stdout')
+            err_txt = ""
+            try:
+                with open(stdout_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    err_txt = f.read()
+            except Exception:
+                # stdout 못 읽으면 status라도 반환
+                err_txt = str(getattr(r, 'status', 'failed'))
 
-def fetch_rules():
-    """Ansible을 사용하여 현재 iptables 규칙을 가져옵니다."""
-    # (실제 구현 시에는 playbook_fetch.yml을 만들고 iptables-save 결과를 파싱해야 합니다)
-    # 여기서는 개념 설명을 위해 더미 데이터를 반환합니다.
-    return [
-        {"platform": "on-premise", "rule": "-p tcp -m tcp --dport 22 -j ACCEPT", "comment": "SSH access"},
-        {"platform": "on-premise", "rule": "-p tcp -m tcp --dport 80 -j ACCEPT", "comment": "HTTP access"}
-    ]
+            raise Exception(f"Ansible playbook failed (rc={r.rc}): {err_txt}")
+
+        # 요약 반환
+        summary = getattr(r, 'stats', {})
+        return {"status": "success", "rc": r.rc, "summary": summary}
