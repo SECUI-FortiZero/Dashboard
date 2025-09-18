@@ -7,34 +7,41 @@ import yaml
 # 'api'라는 이름과 URL 접두사(/api)를 가진 Blueprint 객체를 생성합니다.
 bp = Blueprint('api', __name__, url_prefix='/api')
 
+# app/api.py (일부만)
 @bp.route('/policy/apply', methods=['POST'])
 def apply_policy_route():
-    """새로운 정책 YAML 파일을 받아 온프레미스 및 클라우드에 적용합니다."""
     if 'policy_file' not in request.files:
         return jsonify({"status": "error", "message": "정책 YAML 파일이 필요합니다."}), 400
 
     file = request.files['policy_file']
     try:
         policy_data = yaml.safe_load(file.stream)
-        all_rules = policy_data.get('rules', [])
+        if not isinstance(policy_data, dict):
+            return jsonify({"status": "error", "message": "잘못된 YAML 형식입니다."}), 400
 
-        # 플랫폼별로 규칙 분리
+        all_rules = policy_data.get('rules', [])
+        if not isinstance(all_rules, list):
+            return jsonify({"status": "error", "message": "rules는 리스트여야 합니다."}), 400
+
+        default_policy = policy_data.get('default', {})
+        # 플랫폼별 분리
         on_prem_rules = [r for r in all_rules if r.get('platform') == 'on-premise']
-        aws_rules = [r for r in all_rules if r.get('platform') == 'aws']
+        aws_rules     = [r for r in all_rules if r.get('platform') == 'aws']
 
         results = {}
-        # 온프레미스 규칙이 있는 경우에만 Ansible 서비스 호출
         if on_prem_rules:
-            results['on_premise'] = ansible_service.apply_rules(on_prem_rules)
-        
-        # AWS 규칙이 있는 경우에만 Terraform 서비스 호출
+            results['on_premise'] = ansible_service.apply_rules(
+                rules=on_prem_rules,
+                default_policy=default_policy,
+                policy_name=policy_data.get('policy_name', 'unnamed')
+            )
         if aws_rules:
             results['aws'] = terraform_service.apply_rules(aws_rules)
 
         return jsonify({"status": "success", "message": "정책 적용이 완료되었습니다.", "details": results}), 200
 
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return jsonify({"status": "error", "message": f"Apply failed: {e}"}), 500
 
 
 @bp.route('/policy/current', methods=['GET'])
