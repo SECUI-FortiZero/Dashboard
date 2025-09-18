@@ -1,6 +1,9 @@
 import os
+import json
 import mysql.connector
 from dotenv import load_dotenv
+from datetime import datetime
+
 
 load_dotenv()
 
@@ -114,24 +117,6 @@ def get_sessions():
     cursor.execute("SELECT * FROM session")
     return cursor.fetchall()
 
-#LOG
-def insert_log(src_ip, dst_ip, src_port, dst_port, protocol,
-               action, log_source, raw_log):
-    sql = """
-        INSERT INTO log
-        (source_ip, destination_ip, source_port, destination_port,
-         protocol, action, log_source, raw_log)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-    """
-    cursor.execute(sql, (src_ip, dst_ip, src_port, dst_port,
-                         protocol, action, log_source, raw_log))
-    conn.commit()
-    return cursor.lastrowid
-
-def get_logs():
-    cursor.execute("SELECT * FROM log")
-    return cursor.fetchall()
-
 #ALERT
 def insert_alert(alert_type, severity, related_log_ids=None,
                  details=None, status="Pending"):
@@ -168,3 +153,21 @@ def get_reports():
 def close_connection():
     cursor.close()
     conn.close()
+
+#로그 조회
+def get_log_common(limit=100):
+    sql = "SELECT * FROM log_common ORDER BY created_at DESC LIMIT %s"
+    cursor.execute(sql, (limit,))
+    return cursor.fetchall()
+
+def get_log_onprem(log_id):
+    sql = "SELECT * FROM log_onprem WHERE log_id=%s"
+    cursor.execute(sql, (log_id,))
+    return cursor.fetchall()
+
+def get_log_cloud(log_id):
+    sql = "SELECT * FROM log_cloud WHERE log_id=%s"
+    cursor.execute(sql, (log_id,))
+    return cursor.fetchall()
+
+

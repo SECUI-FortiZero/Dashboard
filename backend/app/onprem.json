@@ -1,0 +1,34 @@
+[
+  {
+    "host": "srv1",
+    "timestamp": "2025-09-16T22:01:12Z",
+    "type": "iptables_log",
+    "message": "IPTABLES-LOG: IN=eth0 OUT= MAC=00:11:22:33:44:55:66:77 SRC=192.168.1.10 DST=10.0.0.20 LEN=60 ...",
+    "details": {
+      "in_iface": "eth0",
+      "out_iface": "-",
+      "src_ip": "192.168.1.10",
+      "dst_ip": "10.0.0.20",
+      "proto": "TCP",
+      "src_port": 54321,
+      "dst_port": 22,
+      "action": "DROP"
+    }
+  },
+  {
+    "host": "srv2",
+    "timestamp": "2025-09-16T22:01:12Z",
+    "type": "iptables_log",
+    "message": "IPTABLES-LOG: IN=eth0 OUT= MAC=00:11:22:33:44:55:66:77 SRC=192.168.1.10 DST=10.0.0.20 LEN=60 ...",
+    "details": {
+      "in_iface": "eth0",
+      "out_iface": "-",
+      "src_ip": "192.168.1.10",
+      "dst_ip": "10.0.0.20",
+      "proto": "TCP",
+      "src_port": 54321,
+      "dst_port": 22,
+      "action": "DROP"
+    }
+  }
+]
