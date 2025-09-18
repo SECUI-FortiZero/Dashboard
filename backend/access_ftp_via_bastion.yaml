@@ -1,0 +1,35 @@
+rules:
+  # 1. 온프레미스 방화벽 -> Bastion Host (Public IP)
+  - platform: on-premise
+    chain: FORWARD
+    protocol: tcp
+    destination_ip: "3.37.200.119"         # Bastion Host의 공인 IP
+    port: 22
+    source_ip: "192.168.5.40/32"         # 사용자 PC의 내부 IP
+    action: ACCEPT
+    comment: "Allow internal user to access Bastion"
+
+  # 2. 외부 -> Bastion Host 보안 그룹
+  - platform: aws
+    target_sg: "BastionSeverSG"           # <-- 알려주신 Bastion SG 이름
+    protocol: tcp
+    port: 22
+    source_ip: "211.211.211.211/32"       # 온프레미스 방화벽의 공인 IP
+    action: allow
+    comment: "Allow SSH from On-premise Office"
+
+  # 3. Bastion Host 보안 그룹 -> FTP 서버 보안 그룹
+  - platform: aws
+    target_sg: "FTPServerSG"              # <-- 알려주신 FTP SG 이름
+    protocol: tcp
+    port: 21
+    source_sg: "BastionSeverSG"           # <-- 알려주신 Bastion SG 이름
+    action: allow
+    comment: "Allow FTP Control from Bastion"
+  - platform: aws
+    target_sg: "FTPServerSG"              # <-- 알려주신 FTP SG 이름
+    protocol: tcp
+    port: "30000-30009"
+    source_sg: "BastionSeverSG"           # <-- 알려주신 Bastion SG 이름
+    action: allow
+    comment: "Allow FTP Passive Data from Bastion"

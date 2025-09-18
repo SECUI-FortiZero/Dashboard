@@ -5,7 +5,9 @@ variable "security_group_rules" {
     protocol    = string
     from_port   = number
     to_port     = number
-    cidr_blocks = list(string)
+    # source_ip와 source_sg를 선택적(Optional) 속성으로 변경합니다.
+    source_ip   = optional(string)
+    source_sg   = optional(string)
   })))
   default = {}
 }
