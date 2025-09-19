@@ -18,7 +18,7 @@ def save_onprem():
 
     return jsonify({"status": "ok", "inserted": len(ids), "ids": ids})
 
-
+'''
 # 클라우드 로그 API
 @app.route("/api/log/cloud", methods=["POST"])
 def save_cloud():
@@ -31,7 +31,7 @@ def save_cloud():
     insert_log_cloud(ids, logs)
 
     return jsonify({"status": "ok", "inserted": len(ids), "ids": ids})
-
+'''
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
