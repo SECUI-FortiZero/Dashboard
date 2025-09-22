@@ -75,12 +75,17 @@ def insert_policy_history(cur, event, user_id=0):
     policy_id = extract_policy_id(event)
 
     # 변경 유형
+    lower = event_name.lower()
+
     if lower.startswith("create"):
         change_type = "CREATE"
-    elif lower.startswith("delete"):
+    elif lower.startswith("delete") or lower.startswith("revoke"):
         change_type = "DELETE"
+    elif lower.startswith("put") or lower.startswith("update") or lower.startswith("authorize") or lower.startswith("modify"):
+        change_type = "UPDATE"
     else:
         change_type = "UPDATE"
+
 
     after_json = json.dumps(event.get("requestParameters") or {}, ensure_ascii=False)
     before_json = get_previous_after(cur, policy_id) if policy_id else None
