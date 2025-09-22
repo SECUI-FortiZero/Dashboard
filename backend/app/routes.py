@@ -7,7 +7,6 @@ import yaml
 # 'api'라는 이름과 URL 접두사(/api)를 가진 Blueprint 객체를 생성합니다.
 bp = Blueprint('api', __name__, url_prefix='/api')
 
-# app/api.py (일부만)
 @bp.route('/policy/apply', methods=['POST'])
 def apply_policy_route():
     if 'policy_file' not in request.files:
@@ -16,31 +15,29 @@ def apply_policy_route():
     file = request.files['policy_file']
     try:
         policy_data = yaml.safe_load(file.stream)
-        if not isinstance(policy_data, dict):
-            return jsonify({"status": "error", "message": "잘못된 YAML 형식입니다."}), 400
-
         all_rules = policy_data.get('rules', [])
-        if not isinstance(all_rules, list):
-            return jsonify({"status": "error", "message": "rules는 리스트여야 합니다."}), 400
+        # YAML에서 mode 값을 읽어옴. 없으면 'overwrite'를 기본값으로.
+        mode = policy_data.get('mode', 'overwrite')
 
-        default_policy = policy_data.get('default', {})
-        # 플랫폼별 분리
         on_prem_rules = [r for r in all_rules if r.get('platform') == 'on-premise']
-        aws_rules     = [r for r in all_rules if r.get('platform') == 'aws']
+        aws_rules = [r for r in all_rules if r.get('platform') == 'aws']
 
         results = {}
         if on_prem_rules:
-            results['on_premise'] = ansible_service.apply_rules(
-                rules=on_prem_rules,
-                default_policy=default_policy,
-                policy_name=policy_data.get('policy_name', 'unnamed')
-            )
+            # ansible_service도 mode에 따라 다르게 동작하도록 확장이 필요할 수 있습니다.
+            # 현재는 항상 overwrite 모드로 동작합니다.
+            results['on_premise'] = ansible_service.apply_rules(on_prem_rules) 
+        
         if aws_rules:
-            results['aws'] = terraform_service.apply_rules(aws_rules)
+            # mode 값을 terraform_service에 전달합니다.
+            results['aws'] = terraform_service.apply_rules(aws_rules, mode=mode)
 
-        return jsonify({"status": "success", "message": "정책 적용이 완료되었습니다.", "details": results}), 200
+        return jsonify({"status": "success", "message": f"정책 적용이 완료되었습니다. (mode: {mode})", "details": results}), 200
 
     except Exception as e:
+        # 에러 발생 시 traceback을 포함하여 더 자세한 정보 제공 (디버깅용)
+        import traceback
+        print(traceback.format_exc())
         return jsonify({"status": "error", "message": f"Apply failed: {e}"}), 500
 
 
@@ -58,7 +55,6 @@ def get_current_policy_route():
                 "aws": aws_rules
             }
         }), 200
-
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 

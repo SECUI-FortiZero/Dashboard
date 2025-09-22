@@ -1,12 +1,50 @@
-default:
-  input: DROP
-  forward: DROP
-  output: ACCEPT
+# ⚠ default는 참고용 표기일 뿐, 실제 적용 시 기본 정책 변경하지 않음
 
 rules:
+  # ──[A] 신입 PC → 방화벽(서버)로 들어오는 접속 허용 예시 (Inbound) ───────────
+  # SSH 접속 허용
   - platform: on-premise
+    direction: INPUT
     protocol: tcp
-    port: 80
-    source_ip: "192.168.5.50/32"
+    port: 22
+    source_ip: "192.168.5.70/32"
     action: ACCEPT
-    comment: "Allow HTTP from test machine"
+    comment: "Allow SSH from new PC"
+
+  # 내부 웹/관리 포트가 있다면 (예: 8080)
+  # - platform: on-premise
+  #   direction: INPUT
+  #   protocol: tcp
+  #   port: 8080
+  #   source_ip: "<NEW_PC_IP>/32"
+  #   action: ACCEPT
+  #   comment: "Allow internal admin UI from new PC"
+
+  # ──[B] 방화벽(PC) → 특정 서버로 나가는 트래픽 허용 예시 (Outbound) ───────────
+  # 대시보드 서버 API 호출(예: 5001)
+  - platform: on-premise
+    direction: OUTPUT
+    protocol: tcp
+    port: 5001         # dport
+    destination_ip: "192.168.5.40/32"
+    action: ACCEPT
+    comment: "Allow outbound to Dashboard server (5001/tcp)"
+
+  # 필요 시, 신입 PC로의 응답 트래픽을 명시하고 싶다면 (보통 stateful이면 불필요)
+  # - platform: on-premise
+  #   direction: OUTPUT
+  #   protocol: tcp
+  #   sport: 22
+  #   destination_ip: "<NEW_PC_IP>/32"
+  #   action: ACCEPT
+  #   comment: "Allow SSH replies to new PC (optional)"
+
+  # ──[C] 진단용 ICMP (선택) ────────────────────────────────────────────────
+  # 신입 PC에서 방화벽으로 ping 가능하게
+  # - platform: on-premise
+  #   direction: INPUT
+  #   protocol: icmp
+  #   icmp_types: ["echo-request"]
+  #   source_ip: "<NEW_PC_IP>/32"
+  #   action: ACCEPT
+  #   comment: "Allow ICMP echo-request from new PC"

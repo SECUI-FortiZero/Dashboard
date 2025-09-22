@@ -1,6 +1,9 @@
-# !!! 중요: 이 파일 전체를 복사해서 붙여넣어 주세요.
-# YAML은 들여쓰기가 매우 중요합니다. 'rules:' 아래의 '-'는 공백 2칸,
-# 그 아래의 키들은 공백 4칸으로 맞춰져 있습니다.
+# intern_full_setup.yaml
+# !!! 이 파일은 현재 관리 중인 모든 클라우드 리소스를 포함해야 합니다.
+
+mode: merge          # 👈 추가: 기존 SG 규칙과 병합
+
+
 rules:
   # 1. 온프레미스 방화벽 -> Bastion Host (Public IP)
   - platform: on-premise
@@ -21,7 +24,7 @@ rules:
     action: allow
     comment: "Allow SSH from On-premise Office"
 
-  # 3. Bastion Host 보안 그룹 -> FTP 서버 보안 그룹
+  # 3. Bastion Host -> FTP 서버 보안 그룹
   - platform: aws
     target_sg: "FTPServerSG"
     protocol: tcp
@@ -32,7 +35,19 @@ rules:
   - platform: aws
     target_sg: "FTPServerSG"
     protocol: tcp
-    port: "30000-30009"
+    port: "50000-50009"
     source_sg: "BastionServerSG"
     action: allow
     comment: "Allow FTP Passive Data from Bastion"
+
+  # 4. InnerServerSG를 관리 대상에 포함 (삭제 방지)
+  #    현재 적용할 규칙이 없어도, 이렇게 빈 규칙을 가진 채로 포함시켜야 합니다.
+  #    또는 실제 필요한 규칙을 추가해도 됩니다.
+  - platform: aws
+    target_sg: "InnerServerSG"
+    # 예시: Bastion에서 8080 포트로 접근 허용
+    protocol: tcp
+    port: 9001
+    source_sg: "BastionServerSG"
+    action: allow
+    comment: "Keep InnerServerSG managed by Terraform"
