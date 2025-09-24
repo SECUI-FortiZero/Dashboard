@@ -72,6 +72,46 @@ def _fetch_rules_for_sg(sg_name, ec2_client):
         return []
 
 
+def _auto_import_security_groups(tmp_dir, sg_names):
+    """이미 존재하는 SG 컨테이너를 state에 import (중복 SG 생성 방지)."""
+    if not sg_names:
+        return
+    ec2 = boto3.client('ec2', region_name=AWS_REGION)
+
+    # 이름 -> ID 매핑
+    resp = ec2.describe_security_groups(
+        Filters=[
+            {"Name": "group-name", "Values": list(sg_names)},
+            {"Name": "vpc-id", "Values": [AWS_VPC_ID]},
+        ]
+    )
+    name_to_id = {sg["GroupName"]: sg["GroupId"] for sg in resp.get("SecurityGroups", [])}
+
+    for name in sg_names:
+        sg_id = name_to_id.get(name)
+        if not sg_id:
+            # 실존하지 않으면 import 불가 (apply 시 새로 생성될 수 있음)
+            continue
+
+        addr = f'aws_security_group.managed_sg["{name}"]'
+
+        # 이미 state에 있나 확인
+        try:
+            subprocess.run(
+                ["terraform", f"-chdir={tmp_dir}", "state", "show", addr],
+                check=True, capture_output=True, text=True
+            )
+            continue  # 이미 import됨
+        except subprocess.CalledProcessError:
+            pass
+
+        # import 실행
+        subprocess.run(
+            ["terraform", f"-chdir={tmp_dir}", "import", addr, sg_id],
+            check=False, capture_output=True, text=True
+        )
+
+
 def _auto_import_existing_rules(tmp_dir, rules):
     """AWS에 이미 존재하는 규칙은 terraform import 해서 중복 생성 오류를 예방."""
     ec2 = boto3.client('ec2', region_name=AWS_REGION)
@@ -245,7 +285,7 @@ def apply_rules(rules, mode='overwrite'):
         "aws_vpc_id": AWS_VPC_ID,   # data lookup용 VPC ID
     }
 
-    # 4) 임시 작업 디렉터리에서 Terraform 실행 (+ 선택적 auto-import)
+    # 4) 임시 작업 디렉터리에서 Terraform 실행 (+ 자동 import)
     AUTO_IMPORT_EXISTING = True
     with tempfile.TemporaryDirectory() as tmp_terraform_dir:
         # 필요한 .tf 및 .terraform.lock.hcl만 복사 (state는 복사하지 않음)
@@ -269,10 +309,14 @@ def apply_rules(rules, mode='overwrite'):
         except subprocess.CalledProcessError as e:
             raise Exception(f"Terraform init failed:\nSTDOUT:\n{e.stdout}\nSTDERR:\n{e.stderr}")
 
-        # 기존 규칙 import로 중복 에러 예방
+        # ➊ SG 컨테이너 먼저 import (중복 SG 생성/에러 방지)
+        _auto_import_security_groups(tmp_terraform_dir, managed_sg_names)
+
+        # ➋ 기존 규칙 import로 중복 에러 예방
         if AUTO_IMPORT_EXISTING:
             _auto_import_existing_rules(tmp_terraform_dir, final_rules)
 
+        # apply
         try:
             result = subprocess.run(
                 ["terraform", f"-chdir={tmp_terraform_dir}", "apply", "-auto-approve"],
