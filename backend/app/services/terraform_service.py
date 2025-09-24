@@ -47,9 +47,52 @@ def _convert_rule_to_dict(rule, ec2_client):
         }
     return None
 
+def _expand_permission_to_dicts(permission, ec2_client):
+    """EC2 IpPermission 한 건을 (CIDR/IPv6/SG 소스별로) 여러 dict로 펼쳐 반환."""
+    results = []
+
+    # 포트 정규화
+    from_port = permission.get('FromPort', 0)
+    to_port = permission.get('ToPort', from_port)
+    port_val = f"{from_port}-{to_port}" if to_port != from_port else from_port
+    proto = permission.get('IpProtocol', 'tcp')
+
+    # 1) IPv4 CIDR 들
+    for ipr in (permission.get('IpRanges') or []):
+        results.append({
+            "comment": ipr.get('Description', ''),
+            "protocol": proto,
+            "port": port_val,
+            "source_ip": ipr.get('CidrIp')
+        })
+
+    # 2) IPv6 CIDR 들
+    for ipr6 in (permission.get('Ipv6Ranges') or []):
+        results.append({
+            "comment": ipr6.get('Description', ''),
+            "protocol": proto,
+            "port": port_val,
+            "source_ip": ipr6.get('CidrIpv6')
+        })
+
+    # 3) SG 소스들
+    for gp in (permission.get('UserIdGroupPairs') or []):
+        try:
+            sg_info = ec2_client.describe_security_groups(GroupIds=[gp.get('GroupId')])
+            sg_name = sg_info['SecurityGroups'][0]['GroupName']
+        except Exception:
+            sg_name = gp.get('GroupId')  # 실패 시 ID 그대로
+        results.append({
+            "comment": gp.get('Description', ''),
+            "protocol": proto,
+            "port": port_val,
+            "source_sg": sg_name
+        })
+
+    return results
 
 def _fetch_rules_for_sg(sg_name, ec2_client):
-    """특정 보안 그룹의 현재 인바운드 규칙을 읽어오는 헬퍼 함수"""
+    """특정 보안 그룹의 현재 인바운드 규칙을 읽어옴(모든 CIDR/SG 소스 전개)."""
     try:
         response = ec2_client.describe_security_groups(
             Filters=[
@@ -62,13 +105,10 @@ def _fetch_rules_for_sg(sg_name, ec2_client):
 
         sg = response['SecurityGroups'][0]
         existing_rules = []
-        for rule in sg.get('IpPermissions', []):
-            converted_rule = _convert_rule_to_dict(rule, ec2_client)
-            if converted_rule:
-                existing_rules.append(converted_rule)
+        for perm in (sg.get('IpPermissions') or []):
+            existing_rules.extend(_expand_permission_to_dicts(perm, ec2_client))
         return existing_rules
     except Exception:
-        # 보안 그룹이 아직 없으면 빈 리스트 반환
         return []
 
 
