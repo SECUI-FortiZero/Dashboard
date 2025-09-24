@@ -240,18 +240,21 @@ def _auto_import_existing_rules(tmp_dir, rules):
 
 
 def apply_rules(rules, mode='overwrite'):
-    """Terraform을 실행하여 AWS Security Group 규칙을 적용합니다.
-       - SG 본체는 유지, 규칙은 aws_security_group_rule로만 관리
-       - 중복 규칙은 사전 감지하여 import(선택) 또는 생략
     """
-    aws_rules = [r for r in rules if 'target_sg' in r]
-    if not aws_rules:
-        return {"status": "skipped", "message": "No AWS rules to apply."}
+    - SG 규칙(aws_security_group_rule)과 IAM 유저(aws_iam_user …)를 함께 처리
+    """
+    entries = [r for r in rules if r.get('platform') == 'aws']
+    if not entries:
+        return {"status": "skipped", "message": "No AWS items to apply."}
 
-    # 1) YAML → 내부 표현 정규화
+    # --- 구분: SG 규칙 vs IAM 유저 ---
+    sg_inputs  = [r for r in entries if r.get('type') in (None, 'sg_rule') or 'target_sg' in r]
+    iam_inputs = [r for r in entries if r.get('type') == 'iam_user']
+
+    # ---------- SG 규칙 정규화 (기존 로직 재사용) ----------
     normalized_rules = []
     managed_sg_names = set()
-    for r in aws_rules:
+    for r in sg_inputs:
         sg = r['target_sg']
         managed_sg_names.add(sg)
 
@@ -272,19 +275,17 @@ def apply_rules(rules, mode='overwrite'):
             "description": r.get('comment', r.get('description', '')),
         })
 
-    # 2) merge 모드: 실제 AWS 규칙을 읽어와 병합 (중복 제거)
     final_rules = normalized_rules
     if mode == 'merge':
         ec2 = boto3.client('ec2', region_name=AWS_REGION)
         by_key = {}
-
         def key_fn(x):
             return (
                 x["target_sg"], x["protocol"], x["from_port"], x["to_port"],
                 x.get("source_ip") or f"sg:{x.get('source_sg')}"
             )
+        # 현재 규칙과 합치기(중복 제거) … (당신 코드 그대로)
 
-        # 현재 규칙
         for sg_name in managed_sg_names:
             for exist in _fetch_rules_for_sg(sg_name, ec2):
                 if exist.get('source_sg') or exist.get('source_ip'):
@@ -294,36 +295,60 @@ def apply_rules(rules, mode='overwrite'):
                         ef, et = int(f), int(t)
                     else:
                         ef = et = int(e_port)
-
                     by_key[key_fn({
                         "target_sg": sg_name,
                         "protocol": exist.get('protocol', 'tcp'),
-                        "from_port": ef,
-                        "to_port": et,
+                        "from_port": ef, "to_port": et,
                         "source_ip": exist.get('source_ip'),
                         "source_sg": exist.get('source_sg'),
                     })] = {
                         "target_sg": sg_name,
                         "protocol": exist.get('protocol', 'tcp'),
-                        "from_port": ef,
-                        "to_port": et,
+                        "from_port": ef, "to_port": et,
                         "source_ip": exist.get('source_ip'),
                         "source_sg": exist.get('source_sg'),
                         "description": exist.get('comment', ''),
                     }
-
-        # 신규 규칙
         for n in normalized_rules:
             by_key[key_fn(n)] = n
         final_rules = list(by_key.values())
 
-    # 3) TF 변수 생성
+    # --- IAM 정규화 ---
+    iam_users = []
+    for u in iam_inputs:
+        iam_users.append({
+            "name": u["name"],
+            "path": u.get("path", "/"),  # 기본값 '/'
+            "tags": u.get("tags", {}),
+            "force_destroy": bool(u.get("force_destroy", False)),
+            "permissions_boundary": u.get("permissions_boundary"),
+            "managed_policies": u.get("managed_policies", []),
+            "inline_policies": u.get("inline_policies", []),
+            "create_login_profile": bool(u.get("create_login_profile", False)),
+            "login_password": u.get("login_password"),
+            "password_reset_required": bool(u.get("password_reset_required", True)),
+            "create_access_key": bool(u.get("create_access_key", False)),
+            "pgp_key": u.get("pgp_key"),
+        })
+
+    # (중요) 이미 존재하는 유저의 path를 실제 값으로 맞춰서 '재생성' 방지
+    existing = _detect_existing_iam_users(iam_users)
+    for u in iam_users:
+        if u["name"] in existing:
+            u["path"] = existing[u["name"]['path']]
+            # 필요 시, 여기서 permissions_boundary/tags 등도 보정 가능
+
+
+    # ---------- TF 변수 구성 ----------
     tf_vars = {
         "managed_sg_names": sorted(managed_sg_names),
         "sg_rules": final_rules,
-        "aws_region": AWS_REGION,   # providers.tf 변수
-        "aws_vpc_id": AWS_VPC_ID,   # data lookup용 VPC ID
+        "iam_users": iam_users,        # ← 추가!
+        "aws_region": AWS_REGION,
+        "aws_vpc_id": AWS_VPC_ID,
     }
+    # (나머지 init/apply, SG auto-import 등은 기존 그대로)
+
 
     # 4) 임시 작업 디렉터리에서 Terraform 실행 (+ 자동 import)
     AUTO_IMPORT_EXISTING = True
@@ -386,3 +411,48 @@ def fetch_rules():
         return all_rules
     except Exception as e:
         raise Exception(f"Failed to fetch AWS rules: {str(e)}")
+
+def _detect_existing_iam_users(iam_list):
+    """IAM에 이미 존재하는 유저의 경로(path)를 조회해서 dict로 반환"""
+    iam = boto3.client('iam')
+    existing = {}
+    for u in iam_list:
+        name = u.get('name')
+        if not name:
+            continue
+        try:
+            resp = iam.get_user(UserName=name)
+            existing[name] = {
+                "path": resp["User"]["Path"]
+            }
+        except iam.exceptions.NoSuchEntityException:
+            pass
+        except Exception:
+            # 조회 실패는 무시 (네트워크/권한 등)
+            pass
+    return existing
+
+
+def _auto_import_existing_iam_users(tmp_dir, iam_users):
+    """이미 존재하는 IAM 유저는 terraform import 해서 '생성 충돌'을 방지"""
+    # state에 있나 먼저 확인 → 없으면 import
+    for u in iam_users:
+        name = u.get("name")
+        if not name:
+            continue
+        addr = f'aws_iam_user.this["{name}"]'
+        # state에 존재 여부 확인
+        try:
+            subprocess.run(
+                ["terraform", f"-chdir={tmp_dir}", "state", "show", addr],
+                check=True, capture_output=True, text=True
+            )
+            continue  # 이미 state에 있음
+        except subprocess.CalledProcessError:
+            pass
+
+        # import 실행 (유저명이 import ID)
+        subprocess.run(
+            ["terraform", f"-chdir={tmp_dir}", "import", addr, name],
+            check=False, capture_output=True, text=True
+        )
