@@ -64,8 +64,8 @@ python -m venv venv
 .\venv\Scripts\activate  # Windows
 # source venv/bin/activate  # Linux/macOS
 pip install -r requirements.txt
-python log_db.py
-# → http://localhost:5001/api/log/onprem
+python run.py
+# → http://localhost:5000/api/hello
 ```
 
 ### 3. 프론트엔드 실행
