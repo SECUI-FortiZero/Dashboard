@@ -3,10 +3,11 @@ import sys
 import json
 import gzip
 import mysql.connector
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 
 load_dotenv()
+kst = timezone(timedelta(hours=9))
 
 # DB 접속 설정
 def get_connection():
@@ -41,7 +42,8 @@ def insert_log_cloud(cur, log_id, entry):
             e = int(epoch)
             if e > 10**12:  # 밀리초 방지
                 e //= 1000
-            return datetime.utcfromtimestamp(e)
+            # ✅ UTC → KST 변환
+            return datetime.fromtimestamp(e, tz=timezone.utc).astimezone(kst).replace(tzinfo=None)
         except Exception:
             return None
 
@@ -94,12 +96,12 @@ def process_file(path, cur):
                 }
 
                 # timestamp 계산
-                ts = datetime.utcnow()
+                ts = datetime.now(kst).replace(tzinfo=None)  # 기본값: 현재 KST
                 try:
                     e = int(entry["start"])
                     if e > 10**12:
                         e //= 1000
-                    ts = datetime.utcfromtimestamp(e)
+                    ts = datetime.fromtimestamp(e, tz=timezone.utc).astimezone(kst).replace(tzinfo=None)
                 except Exception:
                     pass
 

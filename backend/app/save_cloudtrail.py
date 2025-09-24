@@ -8,6 +8,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+kst = timezone(timedelta(hours=9))
+
 # DB 접속
 def get_connection():
     return mysql.connector.connect(
@@ -91,6 +93,14 @@ def insert_policy_history(cur, event, user_id=0):
     before_json = get_previous_after(cur, policy_id) if policy_id else None
     raw_event = json.dumps(event, ensure_ascii=False)
 
+    ts = None
+    if event_time:
+        try:
+            dt_utc = datetime.fromisoformat(event_time.replace("Z", "+00:00"))
+            ts = dt_utc.astimezone(kst).replace(tzinfo=None)  # KST, tzinfo 제거
+        except Exception:
+            ts = None
+
     sql = """
     INSERT IGNORE INTO policy_history_c
         (policy_id, user_id, change_type,
@@ -105,7 +115,7 @@ def insert_policy_history(cur, event, user_id=0):
         before_json,
         after_json,
         None,
-        event_time,
+        ts,  
         event_id,
         raw_event
     ))

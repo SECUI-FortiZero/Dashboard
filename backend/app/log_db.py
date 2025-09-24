@@ -122,6 +122,7 @@ def insert_log_onprem(log_ids, data_or_list):
         conn.close()
 
 
+'''
 # 클라우드 로그 저장 (단일/배열 지원)
 def insert_log_cloud(log_ids, items):
     conn = get_connection()
@@ -189,3 +190,28 @@ def insert_log_cloud(log_ids, items):
     finally:
         cursor.close()
         conn.close()
+'''
+
+def insert_log_policy(logs):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    inserted_ids = []
+    sql = """
+        INSERT INTO policy_history_o (host, timestamp, message)
+        VALUES (%s, %s, %s)
+    """
+
+    for log in logs:
+        cur.execute(sql, (
+            log["host"],
+            log["timestamp"],
+            log["message"]
+        ))
+        inserted_ids.append(cur.lastrowid)
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    return inserted_ids
