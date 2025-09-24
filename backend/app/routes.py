@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
-from app.services import ansible_service, terraform_service, log_service
-from app.database import threat_logs_collection
+#from app.services import ansible_service, terraform_service, log_service
+#from app.database import threat_logs_collection
 from app.services import log_service
 from bson import ObjectId
 import yaml
@@ -8,6 +8,7 @@ import yaml
 # 'api'라는 이름과 URL 접두사(/api)를 가진 Blueprint 객체를 생성합니다.
 bp = Blueprint('api', __name__, url_prefix='/api')
 
+'''
 # app/api.py (일부만)
 @bp.route('/policy/apply', methods=['POST'])
 def apply_policy_route():
@@ -43,7 +44,6 @@ def apply_policy_route():
 
     except Exception as e:
         return jsonify({"status": "error", "message": f"Apply failed: {e}"}), 500
-
 
 @bp.route('/policy/current', methods=['GET'])
 def get_current_policy_route():
@@ -90,7 +90,7 @@ def get_threats_route():
         return jsonify({"status": "success", "data": threats}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-
+'''
 
 # DB에서 log_common 조회하는 API
 @bp.route('/logs', methods=['GET'])

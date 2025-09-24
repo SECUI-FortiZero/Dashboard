@@ -1,6 +1,5 @@
 #from app.database import raw_logs_collection
 #from app.tasks import analyze_log_task
-from app.connetor_db import get_connection
 from datetime import datetime
 import json
 from app.connector_db import get_connection
@@ -16,7 +15,7 @@ def normalize_log(row):
 
     if log_type == "CLOUD":
         return {
-            "id": row["id"],
+            "id": row["log_id"],
             "timestamp": row["timestamp"].isoformat() if row["timestamp"] else None,
             "log_type": log_type,
             "srcip": raw.get("srcaddr"),
@@ -28,7 +27,7 @@ def normalize_log(row):
         }
     elif log_type == "ONPREM":
         return {
-            "id": row["id"],
+            "id": row["log_id"],
             "timestamp": row["timestamp"].isoformat() if row["timestamp"] else None,
             "log_type": log_type,
             "srcip": raw.get("SRC"),
@@ -41,7 +40,7 @@ def normalize_log(row):
     else:
         # 알 수 없는 타입 → 원본 그대로 반환
         raw.update({
-            "id": row["id"],
+            "id": row["log_id"],
             "timestamp": row["timestamp"].isoformat() if row["timestamp"] else None,
             "log_type": log_type
         })
@@ -52,12 +51,12 @@ def get_logs(limit=50, log_type=None):
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
 
-    sql = "SELECT id, timestamp, log_type, raw_log FROM log_common"
+    sql = "SELECT log_id, timestamp, log_type, raw_log FROM log_common"
     params = []
     if log_type:
         sql += " WHERE log_type = %s"
         params.append(log_type.upper())
-    sql += " ORDER BY timestamp DESC LIMIT %s"
+    sql += " ORDER BY log_id DESC LIMIT %s"
     params.append(limit)
 
     cursor.execute(sql, params)
