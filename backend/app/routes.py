@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from app.services import ansible_service, terraform_service, log_service
 from app.database import threat_logs_collection
+from app.services import log_service
 from bson import ObjectId
 import yaml
 
@@ -87,5 +88,18 @@ def get_threats_route():
             if 'original_log_id' in threat:
                 threat['original_log_id'] = str(threat['original_log_id'])
         return jsonify({"status": "success", "data": threats}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# DB에서 log_common 조회하는 API
+@bp.route('/logs', methods=['GET'])
+def get_logs_route():
+    log_type = request.args.get("type")
+    limit = request.args.get("limit", 50, type=int)
+
+    try:
+        logs = log_service.get_logs(limit=limit, log_type=log_type)
+        return jsonify({"status": "success", "data": logs}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
