@@ -1,20 +1,16 @@
 from flask import Blueprint, request, jsonify
-#from app.services import ansible_service, terraform_service, log_service
-#from app.database import threat_logs_collection
-from app.services import log_service
+from app.services import ansible_service, terraform_service, log_service
+from app.database import threat_logs_collection  # 기존 동작 유지
 from bson import ObjectId
 import yaml
 
-# 'api'라는 이름과 URL 접두사(/api)를 가진 Blueprint 객체를 생성합니다.
 bp = Blueprint('api', __name__, url_prefix='/api')
 
-'''
-# app/api.py (일부만)
+# 정책 적용 (기존 동작 유지)
 @bp.route('/policy/apply', methods=['POST'])
 def apply_policy_route():
     if 'policy_file' not in request.files:
         return jsonify({"status": "error", "message": "정책 YAML 파일이 필요합니다."}), 400
-
     file = request.files['policy_file']
     try:
         policy_data = yaml.safe_load(file.stream)
@@ -26,7 +22,6 @@ def apply_policy_route():
             return jsonify({"status": "error", "message": "rules는 리스트여야 합니다."}), 400
 
         default_policy = policy_data.get('default', {})
-        # 플랫폼별 분리
         on_prem_rules = [r for r in all_rules if r.get('platform') == 'on-premise']
         aws_rules     = [r for r in all_rules if r.get('platform') == 'aws']
 
@@ -41,32 +36,25 @@ def apply_policy_route():
             results['aws'] = terraform_service.apply_rules(aws_rules)
 
         return jsonify({"status": "success", "message": "정책 적용이 완료되었습니다.", "details": results}), 200
-
     except Exception as e:
         return jsonify({"status": "error", "message": f"Apply failed: {e}"}), 500
 
+# 현재 정책 조회 (기존 동작 유지)
 @bp.route('/policy/current', methods=['GET'])
 def get_current_policy_route():
-    """현재 온프레미스와 클라우드에 적용된 정책을 조회합니다."""
     try:
         on_prem_rules = ansible_service.fetch_rules()
         aws_rules = terraform_service.fetch_rules()
-
         return jsonify({
             "status": "success",
-            "data": {
-                "on_premise": on_prem_rules,
-                "aws": aws_rules
-            }
+            "data": {"on_premise": on_prem_rules, "aws": aws_rules}
         }), 200
-
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
+# 로그 인입 (기존 동작 유지)
 @bp.route('/logs/ingest', methods=['POST'])
 def ingest_log_route():
-    """외부 로그 수집기로부터 로그를 수신하여 DB에 저장하고 AI 분석을 요청합니다."""
     log_data = request.json
     if not log_data or 'message' not in log_data:
         return jsonify({"status": "error", "message": "Log message is required."}), 400
@@ -76,13 +64,11 @@ def ingest_log_route():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
-
+# 위협 로그 조회 (기존 동작 유지)
 @bp.route('/logs/threats', methods=['GET'])
 def get_threats_route():
-    """AI가 위협으로 판단한 로그 목록을 반환합니다."""
     try:
         threats = list(threat_logs_collection.find({}))
-        # MongoDB의 ObjectId를 문자열로 변환하여 JSON 응답 생성
         for threat in threats:
             threat['_id'] = str(threat['_id'])
             if 'original_log_id' in threat:
@@ -90,14 +76,12 @@ def get_threats_route():
         return jsonify({"status": "success", "data": threats}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-'''
 
-# DB에서 log_common 조회하는 API
+# feat/#10: DB에서 log_common 조회하는 간단 API 추가(기존 동작에 영향 없음)
 @bp.route('/logs', methods=['GET'])
 def get_logs_route():
     log_type = request.args.get("type")
     limit = request.args.get("limit", 50, type=int)
-
     try:
         logs = log_service.get_logs(limit=limit, log_type=log_type)
         return jsonify({"status": "success", "data": logs}), 200
