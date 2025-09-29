@@ -47,22 +47,34 @@ def normalize_log(row):
         return raw
 
 
-def get_logs(limit=50, log_type=None):
+def get_logs_by_range(range_type="daily"):
     conn = get_connection()
     cursor = conn.cursor(dictionary=True)
 
-    sql = "SELECT log_id, timestamp, log_type, raw_log FROM log_common"
-    params = []
-    if log_type:
-        sql += " WHERE log_type = %s"
-        params.append(log_type.upper())
-    sql += " ORDER BY log_id DESC LIMIT %s"
-    params.append(limit)
+    if range_type == "daily":
+        date_filter = "NOW() - INTERVAL 1 DAY"
+    elif range_type == "weekly":
+        date_filter = "NOW() - INTERVAL 7 DAY"
+    elif range_type == "monthly":
+        date_filter = "NOW() - INTERVAL 1 MONTH"
+    elif range_type == "hour":
+        date_filter = "NOW() - INTERVAL 1 HOUR"
+    elif range_type == "10min":
+        date_filter = "NOW() - INTERVAL 10 MINUTE"
+    else:
+        raise ValueError("Invalid range type")
 
-    cursor.execute(sql, params)
+    sql = f"""
+        SELECT log_id, log_type, raw_log
+        FROM log_common
+        WHERE timestamp >= {date_filter}
+        ORDER BY log_id DESC
+    """
+
+    cursor.execute(sql)
     rows = cursor.fetchall()
     cursor.close()
     conn.close()
 
-    # ✅ 여기서 normalize 처리
+    # ✅ normalize 처리
     return [normalize_log(row) for row in rows]
