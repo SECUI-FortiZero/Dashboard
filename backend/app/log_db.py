@@ -122,6 +122,8 @@ def insert_log_cloud(log_ids, items):
 '''
 
 # feat/#10: 온프레 정책 로그 저장
+from datetime import datetime
+
 def insert_log_policy(logs):
     conn = get_connection()
     cur = conn.cursor()
@@ -132,9 +134,16 @@ def insert_log_policy(logs):
         VALUES (%s, %s, %s)
     """
     for log in logs:
+        ts = log.get("timestamp")
+        try:
+            dt = datetime.strptime(ts, "%Y-%m-%dT%H:%M:%SZ")
+            ts_formatted = dt.strftime("%Y-%m-%d %H:%M:%S")
+        except Exception:
+            ts_formatted = ts
+
         cur.execute(sql, (
             log["host"],
-            log["timestamp"],
+            ts_formatted,
             log["message"]
         ))
         inserted_ids.append(cur.lastrowid)
