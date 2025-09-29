@@ -87,3 +87,24 @@ def get_logs_route():
         return jsonify({"status": "success", "data": logs}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+@bp.route('/policy', methods=['GET'])
+def get_policy_logs_route():
+    policy_type = request.args.get("type")  
+    limit = request.args.get("limit", 50, type=int)
+
+    try:
+        if policy_type == "cloud":
+            logs = policy_service.get_policy_logs(limit=limit, table="policy_history_c")
+        elif policy_type == "onprem":
+            logs = policy_service.get_policy_logs(limit=limit, table="policy_history_o")
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Invalid type. Use 'cloud' or 'onprem'."
+            }), 400
+
+        return jsonify({"status": "success", "data": logs}), 200
+
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
