@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from app.services import ansible_service, terraform_service, log_service
+from app.services import ansible_service, terraform_service, log_service, policy_service
 from app.database import threat_logs_collection  # 기존 동작 유지
 from bson import ObjectId
 import yaml
@@ -77,6 +77,7 @@ def get_threats_route():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 # feat/#10: DB에서 log_common 조회하는 간단 API 추가(기존 동작에 영향 없음)
 @bp.route('/logs', methods=['GET'])
 def get_logs_route():
@@ -90,14 +91,14 @@ def get_logs_route():
 
 @bp.route('/policy', methods=['GET'])
 def get_policy_logs_route():
-    policy_type = request.args.get("type")  
-    limit = request.args.get("limit", 50, type=int)
+    policy_type = request.args.get("type")       # cloud / onprem
+    range_type = request.args.get("range", "daily")  # daily, weekly, monthly, hour, 10min
 
     try:
         if policy_type == "cloud":
-            logs = policy_service.get_policy_logs(limit=limit, table="policy_history_c")
+            logs = policy_service.get_policy_cloud(range_type)
         elif policy_type == "onprem":
-            logs = policy_service.get_policy_logs(limit=limit, table="policy_history_o")
+            logs = policy_service.get_policy_onprem(range_type)
         else:
             return jsonify({
                 "status": "error",
@@ -106,5 +107,9 @@ def get_policy_logs_route():
 
         return jsonify({"status": "success", "data": logs}), 200
 
+    except ValueError as ve:
+        return jsonify({"status": "error", "message": str(ve)}), 400
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+#/api/policy?type=cloud&range=daily
