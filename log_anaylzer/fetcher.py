@@ -1,11 +1,19 @@
 import os
 import requests
+from dotenv import load_dotenv
 
-API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:5000")
+# .env 로드
+load_dotenv()
+API_BASE_URL = os.getenv("API_BASE_URL", "http://localhost:5001")
 
-def fetch_logs_from_api(log_type, limit=50, base_url=API_BASE_URL):
+def fetch_from_api(endpoint: str, limit: int = 50):
+    """
+    지정된 endpoint에서 데이터를 가져옵니다.
+    endpoint 예: /api/policy?type=cloud&range=daily
+    """
     try:
-        response = requests.get(f"{base_url}/logs", params={"type": log_type, "limit": limit})
+        url = f"{API_BASE_URL}{endpoint}"  # baseurl + endpoint 합치기
+        response = requests.get(url, params={"limit": limit}, timeout=10)
         response.raise_for_status()
         return response.json().get("data", [])
     except requests.exceptions.RequestException as e:
