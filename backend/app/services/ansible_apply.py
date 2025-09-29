@@ -1,4 +1,3 @@
-# app/services/ansible_apply.py
 import os, subprocess, tempfile, json
 from typing import List, Dict, Any
 from app.services.iptables_versioning import _get_rules_by_version, get_version_header
