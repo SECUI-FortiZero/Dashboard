@@ -1,0 +1,14 @@
+rules:
+  - platform: on-premise
+    chain: INPUT
+    protocol: tcp
+    source_ip: "203.0.113.45/32"   # 가짜 악성 IP
+    action: DROP
+    comment: "Block malicious source INPUT"
+
+  - platform: on-premise
+    chain: FORWARD
+    protocol: tcp
+    source_ip: "203.0.113.45/32"
+    action: DROP
+    comment: "Block malicious source FORWARD"

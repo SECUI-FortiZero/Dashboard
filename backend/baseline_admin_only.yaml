@@ -1,0 +1,19 @@
+rules:
+  # 온프레: 대시보드 PC → Bastion SSH 허용
+  - platform: on-premise
+    chain: FORWARD
+    protocol: tcp
+    destination_ip: "3.37.200.119"
+    port: 22
+    source_ip: "192.168.5.40/32"
+    action: ACCEPT
+    comment: "Dashboard (Lee-Boan) → Bastion SSH"
+
+  # AWS: 온프레 공인 IP → Bastion SSH 허용
+  - platform: aws
+    target_sg: "BastionServerSG"
+    protocol: tcp
+    port: 22
+    source_ip: "211.211.211.211/32"
+    action: allow
+    comment: "Allow SSH from On-prem FW"
