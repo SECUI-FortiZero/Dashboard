@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from app.services import ansible_service, terraform_service, log_service, policy_service
-from app.database import threat_logs_collection  # 기존 동작 유지
+#from app.database import threat_logs_collection  # 기존 동작 유지
 from bson import ObjectId
 import yaml
 
@@ -61,19 +61,6 @@ def ingest_log_route():
     try:
         log_id = log_service.save_and_analyze_log(log_data)
         return jsonify({"status": "success", "message": "Log received.", "log_id": log_id}), 202
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-# 위협 로그 조회 (기존 동작 유지)
-@bp.route('/logs/threats', methods=['GET'])
-def get_threats_route():
-    try:
-        threats = list(threat_logs_collection.find({}))
-        for threat in threats:
-            threat['_id'] = str(threat['_id'])
-            if 'original_log_id' in threat:
-                threat['original_log_id'] = str(threat['original_log_id'])
-        return jsonify({"status": "success", "data": threats}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
