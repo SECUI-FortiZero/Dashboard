@@ -68,18 +68,20 @@ def ingest_log_route():
 # feat/#10: DB에서 log_common 조회하는 간단 API 추가(기존 동작에 영향 없음)
 @bp.route('/logs', methods=['GET'])
 def get_logs_route():
-    log_type = request.args.get("type")
-    limit = request.args.get("limit", 50, type=int)
+    range_type = request.args.get("range", "hour")  # daily, weekly, monthly, hour, 10min
+
     try:
-        logs = log_service.get_logs(limit=limit, log_type=log_type)
+        logs = log_service.get_logs_by_range(range_type=range_type)
         return jsonify({"status": "success", "data": logs}), 200
+    except ValueError as ve:
+        return jsonify({"status": "error", "message": str(ve)}), 400
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @bp.route('/policy', methods=['GET'])
 def get_policy_logs_route():
     policy_type = request.args.get("type")       # cloud / onprem
-    range_type = request.args.get("range", "daily")  # daily, weekly, monthly, hour, 10min
+    range_type = request.args.get("range", "hour")  # daily, weekly, monthly, hour, 10min
 
     try:
         if policy_type == "cloud":
