@@ -1,3 +1,4 @@
+# 선택: 다른 섹션(rules 등)과 함께 있어도 됩니다.
 mode: merge
 rules:
   # 1. 온프레미스 방화벽 -> Bastion Host (Public IP)
@@ -34,30 +35,29 @@ rules:
     source_sg: "BastionServerSG"
     action: allow
     comment: "Allow FTP Passive Data from Bastion"
-
-  # (신규) IAM 사용자 생성
-  - platform: aws
-    type: iam_user
-    name: new_intern_user
-    path: / # 패치를 할 때 최상위로
+iam_users:
+  - name: marketing-analyst-01
+    path: "/"
     tags:
       owner: soobin
+      team: Marketing_Team
       env: dev
+    force_destroy: true                # 삭제 시 AccessKey/콘솔프로필까지 정리
     managed_policies:
       - arn:aws:iam::aws:policy/ReadOnlyAccess
     inline_policies:
-      - name: AllowStartStopEC2
+      - name: AllowListOwnBuckets
         document:
           Version: "2012-10-17"
           Statement:
             - Effect: Allow
-              Action: ["ec2:StartInstances","ec2:StopInstances"]
+              Action: ["s3:ListAllMyBuckets"]
               Resource: "*"
-    # 아래 옵션은 필요할 때만 켜세요 (기본값 false)
-    create_login_profile: false         # true면 콘솔 로그인 프로필 생성
-    login_password: null                # 미지정시 AWS가 생성(보통 PGP 요구). 안전상 기본 null
-    password_reset_required: true
-    create_access_key: false            # true면 액세스키 생성(비밀키는 Terraform이 민감 처리)
-    pgp_key: null                       # keybase:아이디 또는 PGP 공개키 (비밀키 암호화용 권장)
-    permissions_boundary: null          # 선택: Permission Boundary ARN
-    force_destroy: false                # true면 삭제 시 액세스키/로그인프로필 함께 삭제
+    create_login_profile: false        # 콘솔 비밀번호 필요 없으면 false
+    create_access_key: true            # 프로그램 접근키 필요하면 true
+
+# ✅ 기존 그룹(콘솔에서 이미 있음)에 “멤버십만” 추가
+iam_user_group_memberships:
+  - user: marketing-analyst-01
+    groups:
+      - Marketing_Team

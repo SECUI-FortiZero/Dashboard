@@ -240,6 +240,13 @@ def _auto_import_existing_rules(tmp_dir, rules):
 
 
 def apply_rules(rules, mode='overwrite'):
+    # 0) IAM 수집
+    iam_pack = _collect_iam_from_rules(rules)
+    iam_users_desired = iam_pack["iam_users_desired"]
+    iam_groups_desired = iam_pack["iam_groups_desired"]
+    iam_users_to_import_only = iam_pack["iam_users_to_import_only"]
+    iam_groups_to_import_only = iam_pack["iam_groups_to_import_only"]
+
     """
     - SG 규칙(aws_security_group_rule)과 IAM 유저(aws_iam_user …)를 함께 처리
     """
@@ -346,9 +353,22 @@ def apply_rules(rules, mode='overwrite'):
         "iam_users": iam_users,        # ← 추가!
         "aws_region": AWS_REGION,
         "aws_vpc_id": AWS_VPC_ID,
-    }
-    # (나머지 init/apply, SG auto-import 등은 기존 그대로)
+        "iam_users": iam_users_desired,     # ← 추가
+        "iam_groups": iam_groups_desired,   # ← 추가
+        }
 
+    with tempfile.TemporaryDirectory() as tmp_terraform_dir:
+        # .tf 복사, tfvars 작성, terraform init ...
+
+        # (1) SG 자동 import (네가 이미 갖고있는 함수)
+        _auto_import_existing_rules(tmp_terraform_dir, final_rules)
+
+        # (2) IAM 자동 import: 생성 대상 + 삭제 대상 둘 다 state로 올림
+        iam_users_all_for_import = iam_users_desired + iam_users_to_import_only
+        iam_groups_all_for_import = iam_groups_desired + iam_groups_to_import_only
+        _auto_import_existing_iam(tmp_terraform_dir, iam_users_all_for_import, iam_groups_all_for_import)
+
+        # apply
 
     # 4) 임시 작업 디렉터리에서 Terraform 실행 (+ 자동 import)
     AUTO_IMPORT_EXISTING = True
@@ -456,3 +476,160 @@ def _auto_import_existing_iam_users(tmp_dir, iam_users):
             ["terraform", f"-chdir={tmp_dir}", "import", addr, name],
             check=False, capture_output=True, text=True
         )
+
+def _collect_iam_from_rules(all_rules):
+    """rules 배열에서 IAM 유저/그룹 정의를 수집한다.
+       state == 'absent' 항목은 '삭제 대상'으로만 import하고, TF vars에서는 제외한다.
+    """
+    iam_users_desired = []
+    iam_groups_desired = []
+    iam_users_to_import_only = []   # 삭제 예정인 것도 state에 먼저 올리기 위함
+    iam_groups_to_import_only = []
+
+    for r in all_rules:
+        if r.get('platform') != 'aws':
+            continue
+        rtype = r.get('type')
+
+        if rtype == 'iam_user':
+            # 삭제 요청?
+            if r.get('state') == 'absent':
+                iam_users_to_import_only.append(r)
+                continue
+            # 원하는 속성만 추출
+            iam_users_desired.append({
+                "name": r["name"],
+                "path": r.get("path", "/"),
+                "tags": r.get("tags"),
+                "force_destroy": r.get("force_destroy", False),
+                "permissions_boundary": r.get("permissions_boundary"),
+                "managed_policies": r.get("managed_policies", []),
+                "inline_policies": r.get("inline_policies", []),  # [{name, policy}]
+                "groups": r.get("groups", []),
+            })
+
+        elif rtype == 'iam_group':
+            if r.get('state') == 'absent':
+                iam_groups_to_import_only.append(r)
+                continue
+            iam_groups_desired.append({
+                "name": r["name"],
+                "path": r.get("path", "/"),
+                "managed_policies": r.get("managed_policies", []),
+                "inline_policies": r.get("inline_policies", []),
+            })
+
+    return {
+        "iam_users_desired": iam_users_desired,
+        "iam_groups_desired": iam_groups_desired,
+        "iam_users_to_import_only": iam_users_to_import_only,
+        "iam_groups_to_import_only": iam_groups_to_import_only,
+    }
+
+def _auto_import_existing_iam(tmp_dir, iam_users_all_for_import, iam_groups_all_for_import):
+    """
+    주어진 사용자/그룹 목록(생성 대상 + 삭제 대상 포함)을 먼저 state에 import.
+    - aws_iam_user.this["<name>"]           => import id: <name>
+    - aws_iam_group.this["<name>"]          => import id: <name>
+    - aws_iam_user_policy.inline["user::policy"]   => import id: user:policy
+    - aws_iam_group_policy.inline["group::policy"] => import id: group:policy
+    - aws_iam_user_policy_attachment.managed["user::arn"]  => import id: user/arn
+    - aws_iam_group_policy_attachment.managed["group::arn"]=> import id: group/arn
+    - aws_iam_user_group_membership.this["user"]    => import id: user
+    """
+    import subprocess, boto3, botocore
+    iam = boto3.client('iam')
+
+    # 유저
+    for u in iam_users_all_for_import:
+        uname = u["name"]
+        # 유저 존재여부
+        try:
+            iam.get_user(UserName=uname)
+        except iam.exceptions.NoSuchEntityException:
+            continue
+
+        # 1) user 본체
+        addr = f'aws_iam_user.this["{uname}"]'
+        _tf_import_if_missing(tmp_dir, addr, uname)
+
+        # 2) inline policies
+        try:
+            paginator = iam.get_paginator('list_user_policies')
+            for page in paginator.paginate(UserName=uname):
+                for pname in page.get('PolicyNames', []):
+                    addr = f'aws_iam_user_policy.inline["{uname}::{pname}"]'
+                    _tf_import_if_missing(tmp_dir, addr, f"{uname}:{pname}")
+        except Exception:
+            pass
+
+        # 3) managed attachments
+        try:
+            paginator = iam.get_paginator('list_attached_user_policies')
+            for page in paginator.paginate(UserName=uname):
+                for ap in page.get('AttachedPolicies', []):
+                    arn = ap['PolicyArn']
+                    addr = f'aws_iam_user_policy_attachment.managed["{uname}::{arn}"]'
+                    _tf_import_if_missing(tmp_dir, addr, f"{uname}/{arn}")
+        except Exception:
+            pass
+
+        # 4) group membership(해당 유저가 그룹에 한 개라도 있으면 import)
+        try:
+            groups = iam.list_groups_for_user(UserName=uname).get('Groups', [])
+            if groups:
+                addr = f'aws_iam_user_group_membership.this["{uname}"]'
+                _tf_import_if_missing(tmp_dir, addr, uname)
+        except Exception:
+            pass
+
+    # 그룹
+    for g in iam_groups_all_for_import:
+        gname = g["name"]
+        # 그룹 존재여부
+        try:
+            iam.get_group(GroupName=gname)
+        except iam.exceptions.NoSuchEntityException:
+            continue
+
+        # 1) group 본체
+        addr = f'aws_iam_group.this["{gname}"]'
+        _tf_import_if_missing(tmp_dir, addr, gname)
+
+        # 2) inline policies
+        try:
+            paginator = iam.get_paginator('list_group_policies')
+            for page in paginator.paginate(GroupName=gname):
+                for pname in page.get('PolicyNames', []):
+                    addr = f'aws_iam_group_policy.inline["{gname}::{pname}"]'
+                    _tf_import_if_missing(tmp_dir, addr, f"{gname}:{pname}")
+        except Exception:
+            pass
+
+        # 3) managed attachments
+        try:
+            paginator = iam.get_paginator('list_attached_group_policies')
+            for page in paginator.paginate(GroupName=gname):
+                for ap in page.get('AttachedPolicies', []):
+                    arn = ap['PolicyArn']
+                    addr = f'aws_iam_group_policy_attachment.managed["{gname}::{arn}"]'
+                    _tf_import_if_missing(tmp_dir, addr, f"{gname}/{arn}")
+        except Exception:
+            pass
+
+
+def _tf_import_if_missing(tmp_dir, addr, import_id):
+    """state에 addr이 없으면 import 수행 (실패해도 계속 진행)"""
+    try:
+        subprocess.run(
+            ["terraform", f"-chdir={tmp_dir}", "state", "show", addr],
+            check=True, capture_output=True, text=True
+        )
+        return  # 이미 있음
+    except subprocess.CalledProcessError:
+        pass
+
+    subprocess.run(
+        ["terraform", f"-chdir={tmp_dir}", "import", addr, import_id],
+        check=False, capture_output=True, text=True
+    )
