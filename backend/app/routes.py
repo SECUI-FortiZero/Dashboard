@@ -2,8 +2,8 @@
 from flask import Blueprint, request, jsonify
 from datetime import datetime
 import yaml
-
-from app.services import ansible_service, terraform_service, log_service
+import traceback
+from app.services import analysis_service, ansible_service, terraform_service, log_service, policy_service
 
 # iptables 버전관리 서비스
 from app.services.iptables_versioning import (
@@ -136,16 +136,17 @@ def apply_policy_route():
 def get_current_policy_route():
     try:
         on_prem_rules = ansible_service.fetch_rules()
-        aws_rules = terraform_service.fetch_rules()
+        # [수정] aws_rules 대신 포괄적인 aws_state를 가져오도록 변경
+        aws_state = terraform_service.fetch_current_aws_state() 
         return (
             jsonify(
-                {"status": "success", "data": {"on_premise": on_prem_rules, "aws": aws_rules}}
+                # [수정] 응답 구조 변경
+                {"status": "success", "data": {"on_premise": on_prem_rules, "aws": aws_state}}
             ),
             200,
         )
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
-
 
 # ==============================
 # 로그 인입 (MySQL 기반 log_service 사용 가정)
@@ -165,16 +166,40 @@ def ingest_log_route():
 # ==============================
 # 로그 조회 (간단 API)
 # ==============================
-@bp.route("/logs", methods=["GET"])
+@bp.route('/logs', methods=['GET'])
 def get_logs_route():
-    log_type = request.args.get("type")
-    limit = request.args.get("limit", 50, type=int)
+    range_type = request.args.get("range", "hour")  # daily, weekly, monthly, hour, 10min
+
     try:
-        logs = log_service.get_logs(limit=limit, log_type=log_type)
+        logs = log_service.get_logs(range_type=range_type)
         return jsonify({"status": "success", "data": logs}), 200
+    except ValueError as ve:
+        return jsonify({"status": "error", "message": str(ve)}), 400
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
+@bp.route('/policy', methods=['GET'])
+def get_policy_logs_route():
+    policy_type = request.args.get("type")       # cloud / onprem
+    range_type = request.args.get("range", "hour")  # daily, weekly, monthly, hour, 10min
+
+    try:
+        if policy_type == "cloud":
+            logs = policy_service.get_policy_cloud(range_type)
+        elif policy_type == "onprem":
+            logs = policy_service.get_policy_onprem(range_type)
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Invalid type. Use 'cloud' or 'onprem'."
+            }), 400
+
+        return jsonify({"status": "success", "data": logs}), 200
+
+    except ValueError as ve:
+        return jsonify({"status": "error", "message": str(ve)}), 400
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 # ==============================
 # iptables 정책 "버전관리" API
@@ -262,3 +287,65 @@ def apply_iptables_version_route():
         return jsonify({"status": "ok"}), 200
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 400
+
+
+
+@bp.route("/logs/threats", methods=["GET"])
+def get_threat_log_table_route():
+    """
+    로그 데이터에서 위협으로 감지된 로그만 JSON 배열 형식으로 반환하는 API
+    """
+    log_type = request.args.get("type")
+    range_type = request.args.get("range", "daily")
+    limit = request.args.get("limit", 100, type=int)
+    
+    try:
+        # JSON을 반환하는 새로운 서비스 함수를 호출합니다.
+        threat_list = analysis_service.get_threat_logs_as_json(
+            log_type=log_type,
+            range_type=range_type,
+            limit=limit
+        )
+        # key 이름을 "threats"로 변경하여 JSON 배열을 반환합니다.
+        return jsonify({"status": "success", "threats": threat_list}), 200
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@bp.route("/logs/analysis-report", methods=["GET"])
+def get_traffic_analysis_report_route():
+    """일반 트래픽 로그를 상세 분석하여 마크다운 보고서를 반환하는 API"""
+    range_type = request.args.get("range", "daily")
+    limit = request.args.get("limit", 100, type=int)
+    
+    try:
+        report_content = analysis_service.get_traffic_analysis_report(
+            range_type=range_type,
+            limit=limit
+        )
+        return jsonify({"status": "success", "report": report_content}), 200
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# =======================================================
+# [신규] AI 정책 로그 상세 보고서 API
+# =======================================================
+@bp.route("/policy/analysis-report", methods=["GET"])
+def get_policy_analysis_report_route():
+    """정책 변경 로그를 상세 분석하여 마크다운 보고서를 반환하는 API"""
+    policy_type = request.args.get("type")
+    range_type = request.args.get("range", "daily")
+    
+    if not policy_type:
+        return jsonify({"status": "error", "message": "'type' 파라미터(cloud 또는 onprem)가 필요합니다."}), 400
+        
+    try:
+        report_content = analysis_service.get_policy_analysis_report(
+            policy_type=policy_type,
+            range_type=range_type
+        )
+        return jsonify({"status": "success", "report": report_content}), 200
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500

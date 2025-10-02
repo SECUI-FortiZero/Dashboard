@@ -2,16 +2,26 @@
 - name: Apply iptables rules
   hosts: firewall_servers
   become: yes
-  gather_facts: yes
+  gather_facts: yes # facts 수집 유지 (OS 정보 활용)
 
   vars:
-    default_input_policy:  "{{ default_policy.input   | default('DROP')   | upper }}"
-    default_forward_policy: "{{ default_policy.forward | default('DROP')   | upper }}"
-    default_output_policy: "{{ default_policy.output  | default('ACCEPT') | upper }}"
+    # ----------------------------------------------------
+    # 기본 정책 설정을 위한 변수 (default_policy에서 오버라이드 가능)
+    # ----------------------------------------------------
+    default_input_policy: "{{ default_policy.input | default('DROP') | upper }}"
+    default_forward_policy: "{{ default_policy.forward | default('DROP') | upper }}"
+    default_output_policy: "{{ default_policy.output | default('ACCEPT') | upper }}"
+    
+    # ----------------------------------------------------
+    # 기타 변수
+    # ----------------------------------------------------
     persist_rules_path: /etc/iptables/rules.v4
+    
+    # API로부터 전달받는 규칙을 위한 변수 (기본값 빈 리스트)
+    rules_from_api: "{{ rules_from_api | default([]) }}" 
 
   pre_tasks:
-    - name: Ensure iptables tools present (Debian/Ubuntu)
+    - name: Ensure iptables tools are present (Debian/Ubuntu)
       apt:
         name:
           - iptables
@@ -19,23 +29,33 @@
           - netfilter-persistent
         state: present
         update_cache: yes
-      when: ansible_facts['os_family'] == 'Debian'
+      when: ansible_os_family == 'Debian'
 
-    - name: Flush all existing rules
+    - name: Flush existing rules in INPUT, FORWARD, OUTPUT chains
       iptables:
         flush: yes
+        chain: "{{ item }}"
+        table: filter # 명시적으로 filter 테이블 지정 (기본값)
+      loop:
+        - INPUT
+        - FORWARD
+        - OUTPUT
 
     # 🔒 락아웃 방지: SSH 허용 먼저 깔아두기
+    # Flush 직후 가장 먼저 실행되어 SSH 연결을 보호합니다.
     - name: Ensure SSH is open (lockout protection)
       iptables:
         chain: INPUT
         protocol: tcp
         destination_port: 22
         jump: ACCEPT
-        comment: "bootstrap SSH allow"
+        comment: "Bootstrap: Allow SSH for Ansible control"
 
   tasks:
-    - name: Set default policies
+    # ============================================
+    # 1. 기본 정책 설정
+    # ============================================
+    - name: Set default policies for INPUT, FORWARD, OUTPUT chains
       iptables:
         chain: "{{ item.chain }}"
         policy: "{{ item.policy }}"
@@ -44,34 +64,46 @@
         - { chain: 'FORWARD', policy: '{{ default_forward_policy }}' }
         - { chain: 'OUTPUT',  policy: '{{ default_output_policy }}' }
 
-    - name: Allow established and related
+    # ============================================
+    # 2. 필수 기본 규칙 (어떤 상황에서도 유지되어야 할 규칙)
+    # ============================================
+    - name: Allow established and related connections
       iptables:
         chain: INPUT
         ctstate: ESTABLISHED,RELATED
         jump: ACCEPT
-        comment: "Allow established/related"
+        comment: "Allow established/related connections"
 
-    - name: Allow loopback
+    - name: Allow loopback traffic on INPUT chain
       iptables:
         chain: INPUT
         in_interface: lo
         jump: ACCEPT
-        comment: "Allow loopback"
+        comment: "Allow loopback traffic"
 
-    - name: Apply rules from policy file (INPUT chain)
+    # ============================================
+    # 3. API를 통해 전달된 동적 규칙 적용
+    # ============================================
+    - name: Apply dynamic rules from API (INPUT chain only, as per original)
+      # 원래 플레이북에서 rules_from_api를 INPUT chain에만 적용했으므로, 
+      # 해당 동작을 유지합니다. 다른 chain에 적용하려면 item.chain을 활용해야 합니다.
       iptables:
-        chain: INPUT
+        chain: INPUT 
         protocol: "{{ item.protocol | default(omit) }}"
         destination_port: "{{ (item.port is defined) | ternary(item.port, omit) }}"
         source: "{{ item.source_ip | default(omit) }}"
         jump: "{{ item.action | default('ACCEPT') | upper }}"
-        comment: "{{ item.comment | default(omit) }}"
-      loop: "{{ rules_from_api | default([]) }}"
+        comment: "{{ item.comment | default('Dynamic rule from API') }}"
+      loop: "{{ rules_from_api }}"
+      when: rules_from_api is defined and rules_from_api | length > 0
 
+    # ============================================
+    # 4. 모든 규칙 적용 후 정책 저장
+    # ============================================
     - name: Persist rules to file (Debian/Ubuntu)
       shell: iptables-save > {{ persist_rules_path }}
       notify: Restart netfilter-persistent
-      when: ansible_facts['os_family'] == 'Debian'
+      when: ansible_os_family == 'Debian'
 
   handlers:
     - name: Restart netfilter-persistent
@@ -79,4 +111,3 @@
         name: netfilter-persistent
         state: restarted
         enabled: yes
-

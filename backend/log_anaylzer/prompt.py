@@ -20,3 +20,36 @@ def build_log_analysis_prompt(masked_logs):
 {log_string}
 --- 분석 시작 ---
 """
+def build_threat_json_prompt(masked_logs):
+    log_string = json.dumps(masked_logs, indent=2, ensure_ascii=False)
+    return f"""
+You are a security expert who detects threats from log data and responds only in JSON format.
+Analyze the following log data and extract only the logs that are highly likely to be security threats.
+
+Threat detection criteria:
+- Access attempts from outside to sensitive internal ports (e.g., 22, 3389, 6379).
+- Port scanning activities.
+- Access from known malicious IPs or unusual geolocations.
+
+Your response MUST be a JSON array of objects. Each object must contain the following keys: "timestamp", "src_ip", "dst_ip", "dst_port", "protocol", "reason".
+The "reason" field should be a brief explanation in Korean of why you identified it as a threat.
+
+If no threats are detected, return an empty array `[]`.
+Do not include any other text or explanations outside of the JSON array.
+
+Example of a valid response:
+[
+  {{
+    "timestamp": "2025-09-29T16:47:25",
+    "src_ip": "1.183.69.193",
+    "dst_ip": "10.20.1.121",
+    "dst_port": "23",
+    "protocol": "6",
+    "reason": "외부에서 내부망으로 비암호화 프로토콜인 Telnet(23) 접속 시도."
+  }}
+]
+
+--- Log Data ---
+{log_string}
+--- Analysis Start ---
+"""
