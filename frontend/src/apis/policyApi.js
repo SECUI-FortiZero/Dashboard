@@ -1,35 +1,27 @@
+// src/apis/policyApi.js
+import axios from "axios";
 
-// 백엔드 API 서버의 기본 주소
-const API_BASE_URL = 'http://localhost:5001/api';
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_BASE_URL || "http://localhost:5001",
+  timeout: 20000,
+});
 
-/**
- * 현재 적용된 모든 정책(온프레미스, 클라우드)을 가져옵니다.
- * @returns {Promise<Object>} API 응답 데이터
- */
+// 현재 전체 정책
 export const getCurrentPolicies = async () => {
-  const response = await fetch(`${API_BASE_URL}/policy/current`);
-  if (!response.ok) {
-    throw new Error('서버로부터 정책을 불러오는 데 실패했습니다.');
-  }
-  return response.json();
+  const { data } = await api.get("/api/policy/current");
+  return data; // { status, data: { on_premise, aws: { security_group_rules, ... } } }
 };
 
-/**
- * 새로운 YAML 정책 파일을 서버에 전송하여 적용합니다.
- * @param {FormData} formData - policy_file을 포함하는 FormData 객체
- * @returns {Promise<Object>} API 응답 데이터
- */
+// 정책 적용 (YAML 업로드)
 export const applyNewPolicy = async (formData) => {
-  const response = await fetch(`${API_BASE_URL}/policy/apply`, {
-    method: 'POST',
-    body: formData,
+  const { data } = await api.post("/api/policy/apply", formData, {
+    headers: { "Content-Type": "multipart/form-data" },
   });
-  // 응답이 JSON이 아닐 수도 있으므로, 먼저 텍스트로 읽어본 후 파싱 시도
-  const resultText = await response.text();
-  try {
-    return JSON.parse(resultText);
-  } catch (e) {
-    // JSON 파싱 실패 시, 원본 텍스트를 에러 메시지로 반환
-    throw new Error(`서버 응답 처리 오류: ${resultText}`);
-  }
+  return data; // { status, message, details... }
+};
+
+// 온프레/클라우드 정책 변경 이력 조회
+export const getPolicyHistory = async (type = "onprem", range = "daily") => {
+  const { data } = await api.get("/api/policy", { params: { type, range } });
+  return data; // { status, data: [ {event_name, user, timestamp, details} ] }
 };
