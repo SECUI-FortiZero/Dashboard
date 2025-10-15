@@ -1,0 +1,63 @@
+# 선택: 다른 섹션(rules 등)과 함께 있어도 됩니다.
+mode: merge
+rules:
+  # 1. 온프레미스 방화벽 -> Bastion Host (Public IP)
+  - platform: on-premise
+    chain: FORWARD
+    protocol: tcp
+    destination_ip: "3.37.200.119"      # Bastion Host의 공인 IP
+    port: 22
+    source_ip: "192.168.5.40/32"        # 사용자 PC의 내부 IP
+    action: ACCEPT
+    comment: "Allow internal user to access Bastion"
+
+  # 2. 외부 -> Bastion Host 보안 그룹
+  - platform: aws
+    target_sg: "BastionServerSG"
+    protocol: tcp
+    port: 22
+    source_ip: "211.211.211.211/32"     # 온프레미스 방화벽의 공인 IP
+    action: allow
+    comment: "Allow SSH from On-premise Office"
+
+  # 3. Bastion Host -> FTP 서버 보안 그룹
+  - platform: aws
+    target_sg: "FTPServerSG"
+    protocol: tcp
+    port: 21
+    source_sg: "BastionServerSG"
+    action: allow
+    comment: "Allow FTP Control from Bastion"
+  - platform: aws
+    target_sg: "FTPServerSG"
+    protocol: tcp
+    port: "50000-50009"
+    source_sg: "BastionServerSG"
+    action: allow
+    comment: "Allow FTP Passive Data from Bastion"
+iam_users:
+  - name: marketing-analyst-01
+    path: "/"
+    tags:
+      owner: soobin
+      team: Marketing_Team
+      env: dev
+    force_destroy: true                # 삭제 시 AccessKey/콘솔프로필까지 정리
+    managed_policies:
+      - arn:aws:iam::aws:policy/ReadOnlyAccess
+    inline_policies:
+      - name: AllowListOwnBuckets
+        document:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action: ["s3:ListAllMyBuckets"]
+              Resource: "*"
+    create_login_profile: false        # 콘솔 비밀번호 필요 없으면 false
+    create_access_key: true            # 프로그램 접근키 필요하면 true
+
+# ✅ 기존 그룹(콘솔에서 이미 있음)에 “멤버십만” 추가
+iam_user_group_memberships:
+  - user: marketing-analyst-01
+    groups:
+      - Marketing_Team

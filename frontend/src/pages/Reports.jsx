@@ -1,14 +1,26 @@
 // src/pages/Reports.jsx
-import React, { useState } from 'react'; // [수정됨] useState를 import에 추가했습니다.
+import React, { useState } from 'react';
 import styled from 'styled-components';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeHighlight from 'rehype-highlight';
+import 'highlight.js/styles/github-dark.css';
 import { MdDateRange, MdTopic, MdFileCopy, MdAddAlert, MdNotificationsOff, MdAdd } from 'react-icons/md';
+import axios from 'axios';
+
+// --- axios ---
+const api = axios.create({
+  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5001',
+  timeout: 20000,
+});
 
 // --- Styled Components ---
 const PageContainer = styled.div`
   width: 100%;
   max-width: 1400px;
   margin: 0 auto;
+  padding: 0 16px;
+  box-sizing: border-box;
 `;
 
 const PageHeader = styled.div`
@@ -34,6 +46,7 @@ const Card = styled.div`
   border: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
   flex-direction: column;
+  overflow: hidden; /* 내부 요소가 넘치지 않도록 */
 `;
 
 const CardHeader = styled.div`
@@ -112,13 +125,18 @@ const ReportDisplayCard = styled(Card)`
 const MarkdownWrapper = styled.div`
   flex-grow: 1;
   color: #E2E8F0;
-  h2 { font-size: 20px; border-bottom: 1px solid #2D2E5F; padding-bottom: 8px; margin-top: 0; }
-  p { line-height: 1.6; }
-  ul { padding-left: 20px; }
-  code {
-    background-color: #0F1535; padding: 2px 6px; border-radius: 4px;
-    font-family: 'Fira Code', monospace;
-  }
+  max-width: 100%;
+  overflow-x: hidden;
+  word-break: break-word;
+
+  h1, h2, h3 { margin: 1.2rem 0 .6rem; }
+  h2 { font-size: 20px; border-bottom: 1px solid #2D2E5F; padding-bottom: 8px; }
+  p { line-height: 1.7; margin: .4rem 0; }
+  ul, ol { padding-left: 1.2rem; }
+  code { background-color: #0F1535; padding: 2px 6px; border-radius: 4px; font-family: 'Fira Code', monospace; }
+  pre { background: #0B1230; padding: 12px; border-radius: 10px; border: 1px solid #2D2E5F; overflow-x: auto; white-space: pre-wrap; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #2D2E5F; padding: 6px 8px; }
 `;
 
 const AlarmList = styled.ul`
@@ -135,49 +153,65 @@ const AlarmItem = styled.li`
   
   svg {
     margin-right: 12px; font-size: 18px;
-    color: ${({ type }) => (type === 'added' ? '#01B574' : '#E31A1A')};
+    color: ${({ $type }) => ($type === 'added' ? '#01B574' : '#E31A1A')};
   }
   
   span { color: #A0AEC0; margin-left: auto; }
 `;
 
-// --- Reports 페이지 메인 컴포넌트 ---
+// --- 헬퍼: 서버가 ```로 감싼 MD를 보내면 벗겨주기 ---
+const normalizeMarkdown = (md) => {
+  if (!md) return '';
+  const trimmed = md.trim();
+  if (trimmed.startsWith('```')) {
+    // 첫 줄의 ```lang 제거
+    const withoutOpen = trimmed.replace(/^```[a-zA-Z0-9-]*\n?/, '');
+    // 마지막 ``` 제거
+    return withoutOpen.replace(/```$/, '').trim();
+  }
+  return md;
+};
+
+// --- Reports 페이지 ---
 const Reports = () => {
-  const [dateRange, setDateRange] = useState('');
-  const [reportTopic, setReportTopic] = useState('');
+  const [range, setRange] = useState('daily'); // 10min|hourly|daily|weekly
+  const [topic, setTopic] = useState('general'); // general|onprem|cloud
   const [isGenerating, setIsGenerating] = useState(false);
   const [reportContent, setReportContent] = useState('');
 
-  const canGenerate = dateRange && reportTopic;
+  const canGenerate = !!range && !!topic;
 
-  const handleGenerateReport = () => {
-    if (!canGenerate) return;
+  const fetchReport = async () => {
+    if (!canGenerate || isGenerating) return;
 
-    setIsGenerating(true);
-    setReportContent('AI generating a report... 🤖');
-    
-    setTimeout(() => {
-      const generatedReport = `
-## ${reportTopic} 분석 리포트 (${dateRange})
+    try {
+      setIsGenerating(true);
+      setReportContent('AI generating a report... 🤖');
 
-지난 선택된 기간 동안 **${reportTopic}** 데이터를 분석한 결과, 몇 가지 주요 동향과 이상 징후가 발견되었습니다.
+      let res;
+      if (topic === 'general') {
+        res = await api.get('/api/logs/analysis-report', { params: { range } });
+      } else if (topic === 'onprem') {
+        res = await api.get('/api/policy/analysis-report', { params: { type: 'onprem', range } });
+      } else if (topic === 'cloud') {
+        res = await api.get('/api/policy/analysis-report', { params: { type: 'cloud', range } });
+      }
 
-### 주요 발견 사항
-- **총 ${Math.floor(Math.random() * 100 + 50)}개의 정책 변경**이 감지되었으며, 이 중 ${Math.floor(Math.random() * 10 + 1)}개가 긴급 조치가 필요한 것으로 확인되었습니다.
-- 특정 IP 대역(\`192.168.1.0/24\`)에서의 비정상적인 트래픽이 **${Math.floor(Math.random() * 30 + 10)}% 증가**했습니다.
-- \`Allow-Public-Web-Traffic\` 정책에 대한 접근 시도가 평소보다 **${Math.floor(Math.random() * 200)}% 급증**했습니다.
-
-### AI 추천 조치
-1. '긴급'으로 분류된 정책 변경 사항에 대해 즉시 검토가 필요합니다.
-2. \`192.168.1.0/24\` 대역에 대한 모니터링 강화를 권장합니다.
-`;
-      setReportContent(generatedReport);
+      if (res?.data?.status === 'success') {
+        setReportContent(normalizeMarkdown(res.data.report));
+      } else {
+        setReportContent('❌ Failed to generate report. Please try again.');
+      }
+    } catch (e) {
+      console.error(e);
+      setReportContent('❌ Error while generating report.');
+    } finally {
       setIsGenerating(false);
-    }, 2000);
+    }
   };
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(reportContent)
+    navigator.clipboard.writeText(reportContent || '')
       .then(() => alert('리포트 내용이 클립보드에 복사되었습니다.'))
       .catch(err => console.error('복사 실패:', err));
   };
@@ -196,25 +230,30 @@ const Reports = () => {
                 <CardTitle>Generate Reports</CardTitle>
                 <CardSubtitle>Select period and topic to generate AI-powered reports.</CardSubtitle>
               </TitleGroup>
-              <SmallButton onClick={handleGenerateReport} disabled={!canGenerate || isGenerating}>
+              <SmallButton onClick={fetchReport} disabled={!canGenerate || isGenerating}>
                 {isGenerating ? 'Generating...' : 'Generate'}
               </SmallButton>
             </CardHeader>
+
             <InputGroup>
               <SelectWrapper>
                 <MdDateRange />
-                <Select value={dateRange} onChange={e => setDateRange(e.target.value)}>
-                  <option value="">Select Date Range</option>
-                  <option value="Last 7 days">Last 7 days</option>
-                  <option value="Last 30 days">Last 30 days</option>
+                {/* 기간: 로그 페이지와 동일 옵션 */}
+                <Select value={range} onChange={e => setRange(e.target.value)}>
+                  <option value="10min">Last 10 minutes</option>
+                  <option value="hourly">Hourly</option>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
                 </Select>
               </SelectWrapper>
+
               <SelectWrapper>
                 <MdTopic />
-                <Select value={reportTopic} onChange={e => setReportTopic(e.target.value)}>
-                  <option value="">Select Topic</option>
-                  <option value="Policy Changes">Policy Changes</option>
-                  <option value="Suspicious Logs">Suspicious Logs</option>
+                {/* 토픽: 세 가지로 통일 */}
+                <Select value={topic} onChange={e => setTopic(e.target.value)}>
+                  <option value="general">General Logs</option>
+                  <option value="onprem">Policy On-Prem Logs</option>
+                  <option value="cloud">Policy Cloud Logs</option>
                 </Select>
               </SelectWrapper>
             </InputGroup>
@@ -227,16 +266,28 @@ const Reports = () => {
                 <CardSubtitle>This is an AI-generated report based on your selection.</CardSubtitle>
               </TitleGroup>
             </CardHeader>
+
             <MarkdownWrapper>
-              <ReactMarkdown>{reportContent || 'Please generate a report to see the content.'}</ReactMarkdown>
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={[rehypeHighlight]}
+              >
+                {reportContent || 'Please generate a report to see the content.'}
+              </ReactMarkdown>
             </MarkdownWrapper>
-            <Button style={{ marginTop: '24px', alignSelf: 'flex-start', width: 'auto', padding: '8px 16px' }} onClick={handleCopy} disabled={!reportContent || isGenerating}>
+
+            <Button
+              style={{ marginTop: '24px', alignSelf: 'flex-start', width: 'auto', padding: '8px 16px' }}
+              onClick={handleCopy}
+              disabled={!reportContent || isGenerating}
+            >
               <MdFileCopy style={{marginRight: '8px'}} />
               Copy to Clipboard
             </Button>
           </ReportDisplayCard>
         </div>
 
+        {/* 알람은 목업 유지 */}
         <Card>
           <CardHeader>
             <TitleGroup>
@@ -246,13 +297,13 @@ const Reports = () => {
             <SmallButton><MdAdd /> Add Alarm</SmallButton>
           </CardHeader>
           <AlarmList>
-            <AlarmItem type="added">
+            <AlarmItem $type="added">
               <MdAddAlert /> DB Server Access Fail <span>Slack</span>
             </AlarmItem>
-            <AlarmItem type="deleted">
+            <AlarmItem $type="deleted">
               <MdNotificationsOff /> Deprecated FTP Traffic <span>Email</span>
             </AlarmItem>
-            <AlarmItem type="added">
+            <AlarmItem $type="added">
               <MdAddAlert /> Web Server Auth Bypass <span>Slack</span>
             </AlarmItem>
           </AlarmList>
