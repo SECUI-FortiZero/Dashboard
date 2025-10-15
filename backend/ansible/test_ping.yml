@@ -1,0 +1,8 @@
+---
+- name: Test Ansible Connectivity
+  hosts: firewall_servers
+  gather_facts: no  # <-- 이 부분이 핵심입니다! 정보 수집을 건너뜁니다.
+
+  tasks:
+    - name: Ping the remote host
+      ping:

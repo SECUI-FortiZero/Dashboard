@@ -12,7 +12,6 @@ const api = axios.create({
   timeout: 20000,
 });
 
-
 // --- API 함수 ---
 const fetchGeneralLogs = async (range) => {
   const { data } = await api.get('/api/logs', { params: { range } });
@@ -28,8 +27,9 @@ const fetchPolicyLogs = async (type, range) => {
   return data.data.filter((l) => l.log_type?.toLowerCase() === type);
 };
 
-const fetchThreatLogs = async (range) => {
-  const { data } = await api.get('/api/logs/threats', { params: { range } });
+// Threat Logs (항상 10분 단위)
+const fetchThreatLogs = async () => {
+  const { data } = await api.get('/api/logs/threats', { params: { range: '10min' } });
   if (data.status !== 'success') throw new Error(data.message);
   return data.threats;
 };
@@ -49,20 +49,11 @@ const PageContainer = styled.div`
   width: 100%;
   max-width: 1400px;
   margin: 0 auto;
-  display: flex;
-  gap: 24px;
-`;
-
-const LeftSection = styled.div`flex: 3;`;
-const RightSection = styled.div`
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
+  padding: 0 16px 40px;
 `;
 
 const PageHeader = styled.div`
-  margin-bottom: 2rem;
+  margin: 24px 0 16px;
   h1 {
     font-size: 24px; font-weight: 500; margin: 0;
     span { color: #A0AEC0; font-weight: 400; }
@@ -105,9 +96,10 @@ const Button = styled.button`
 `;
 
 const Table = styled.div``;
+
 const TableHeader = styled.div`
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr 2fr;
+  grid-template-columns: ${(p) => p.cols || '1fr 1fr 1fr 1fr 2fr'};
   padding: 16px;
   border-bottom: 1px solid #2D2E5F;
   span { color: #A0AEC0; font-size: 10px; font-weight: 500; text-transform: uppercase; }
@@ -116,7 +108,7 @@ const TableHeader = styled.div`
 const TableRow = styled.div`
   position: relative;
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr 2fr;
+  grid-template-columns: ${(p) => p.cols || '1fr 1fr 1fr 1fr 2fr'};
   align-items: center;
   padding: 16px;
   font-size: 14px;
@@ -174,12 +166,11 @@ const Logs = () => {
     enabled: logType === 'onprem' || logType === 'cloud',
   });
 
-// Threat Logs (항상 10분 단위)
-const { data: threatLogs = [], isLoading: loadingThreats } = useQuery({
-  queryKey: ['threatLogs', '10min'],   // 캐시 키도 고정
-  queryFn: () => fetchThreatLogs("10min"),
-});
-
+  // Threat Logs (항상 10분 단위 — 차트 아래 Full width로 표시)
+  const { data: threatLogs = [], isLoading: loadingThreats } = useQuery({
+    queryKey: ['threatLogs', '10min'],
+    queryFn: fetchThreatLogs,
+  });
 
   // 현재 선택된 로그 데이터
   let displayedLogs = [];
@@ -189,105 +180,105 @@ const { data: threatLogs = [], isLoading: loadingThreats } = useQuery({
 
   return (
     <PageContainer>
-      <LeftSection>
-        <PageHeader>
-          <h1><span>Pages /</span> Logs</h1>
-        </PageHeader>
+      <PageHeader>
+        <h1><span>Pages /</span> Logs</h1>
+      </PageHeader>
 
-        <FilterBar>
-          <Select value={logType} onChange={(e) => setLogType(e.target.value)}>
-            <option value="general">General Logs</option>
-            <option value="onprem">Policy On-Prem Logs</option>
-            <option value="cloud">Policy Cloud Logs</option>
-          </Select>
-          <Select value={timeRange} onChange={(e) => setTimeRange(e.target.value)}>
-            <option value="10min">Last 10 minutes</option>
-            <option value="hourly">Hourly</option>
-            <option value="daily">Daily</option>
-            <option value="weekly">Weekly</option>
-          </Select>
-          <Button>Search</Button>
-        </FilterBar>
+      {/* 필터 바 */}
+      <FilterBar>
+        <Select value={timeRange} onChange={(e) => setTimeRange(e.target.value)}>
+          <option value="10min">Last 10 minutes</option>
+          <option value="hourly">Hourly</option>
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+        </Select>
+        <Select value={logType} onChange={(e) => setLogType(e.target.value)}>
+          <option value="general">General Logs</option>
+          <option value="onprem">Policy On-Prem Logs</option>
+          <option value="cloud">Policy Cloud Logs</option>
+        </Select>
+        <Button>Search</Button>
+      </FilterBar>
 
-        <Card>
-          <h3>Log Data Volume</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <AreaChart data={logVolumeData}>
-              <defs>
-                <linearGradient id="colorVolume" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#01B574" stopOpacity={0.8}/>
-                  <stop offset="95%" stopColor="#01B574" stopOpacity={0}/>
-                </linearGradient>
-              </defs>
-              <XAxis dataKey="name" stroke="#56577A" fontSize="12px" />
-              <YAxis stroke="#56577A" fontSize="12px" />
-              <Tooltip contentStyle={{ backgroundColor: '#1A1F37', border: '1px solid #2D2E5F' }} />
-              <Area type="monotone" dataKey="volume" stroke="#01B574" fillOpacity={1} fill="url(#colorVolume)" />
-            </AreaChart>
-          </ResponsiveContainer>
-        </Card>
+      {/* 차트 */}
+      <Card>
+        <h3 style={{ marginTop: 0 }}>Log Data Volume</h3>
+        <ResponsiveContainer width="100%" height={300}>
+          <AreaChart data={logVolumeData}>
+            <defs>
+              <linearGradient id="colorVolume" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="5%" stopColor="#01B574" stopOpacity={0.8}/>
+                <stop offset="95%" stopColor="#01B574" stopOpacity={0}/>
+              </linearGradient>
+            </defs>
+            <XAxis dataKey="name" stroke="#56577A" fontSize="12px" />
+            <YAxis stroke="#56577A" fontSize="12px" />
+            <Tooltip contentStyle={{ backgroundColor: '#1A1F37', border: '1px solid #2D2E5F' }} />
+            <Area type="monotone" dataKey="volume" stroke="#01B574" fillOpacity={1} fill="url(#colorVolume)" />
+          </AreaChart>
+        </ResponsiveContainer>
+      </Card>
 
-        <Card>
-          <h3>Streaming Area ({logType})</h3>
-          {loadingGeneral || loadingPolicy ? (
-            <p>Loading logs...</p>
-          ) : (
+      {/* ⬇️ 트리튼: 차트 바로 아래, 전체 폭 */}
+      <Card>
+        <h3 style={{ marginTop: 0 }}>AI Threat Detections</h3>
+        {loadingThreats ? (
+          <p>Loading threats...</p>
+        ) : (
+          <>
+            <p style={{ color: '#A0AEC0', fontSize: '14px', marginBottom: '12px', display: 'flex', alignItems: 'center' }}>
+              <MdInfo style={{ color: '#E31A1A', marginRight: '8px' }} />
+              AI has detected {threatLogs.length} suspicious logs.
+            </p>
             <Table>
-              <TableHeader>
-                <span>TIMESTAMP</span>
+              <TableHeader cols="1.6fr 1.2fr 1.2fr .8fr .8fr">
+                <span>TIME</span>
                 <span>SRC IP</span>
                 <span>DST IP</span>
+                <span>PORT</span>
                 <span>PROTOCOL</span>
-                <span>ACTION</span>
               </TableHeader>
-              {displayedLogs.map((log, idx) => (
-                <TableRow key={idx}>
-                  <div>{log.timestamp}</div>
-                  <div>{log.srcip}</div>
-                  <div>{log.dstip}</div>
-                  <div>{log.protocol}</div>
-                  <div>{log.action ?? '-'}</div>
+              {threatLogs.map((t, idx) => (
+                <TableRow key={idx} cols="1.6fr 1.2fr 1.2fr .8fr .8fr">
+                  <div>{t.timestamp}</div>
+                  <div>{t.src_ip}</div>
+                  <div>{t.dst_ip}</div>
+                  <div>{t.dst_port}</div>
+                  <div>{t.protocol}</div>
+                  <TooltipStyled className="tooltip">{t.reason}</TooltipStyled>
                 </TableRow>
               ))}
             </Table>
-          )}
-        </Card>
-      </LeftSection>
+          </>
+        )}
+      </Card>
 
-      <RightSection>
-        <Card>
-          <h3>AI Threat Detections</h3>
-          {loadingThreats ? (
-            <p>Loading threats...</p>
-          ) : (
-            <>
-              <p style={{ color: '#A0AEC0', fontSize: '14px', marginBottom: '12px', display: 'flex', alignItems: 'center' }}>
-                <MdInfo style={{ color: '#E31A1A', marginRight: '8px' }} />
-                AI has detected {threatLogs.length} suspicious logs.
-              </p>
-              <Table>
-                <TableHeader>
-                  <span>TIME</span>
-                  <span>SRC IP</span>
-                  <span>DST IP</span>
-                  <span>PORT</span>
-                  <span>PROTOCOL</span>
-                </TableHeader>
-                {threatLogs.map((t, idx) => (
-                  <TableRow key={idx}>
-                    <div>{t.timestamp}</div>
-                    <div>{t.src_ip}</div>
-                    <div>{t.dst_ip}</div>
-                    <div>{t.dst_port}</div>
-                    <div>{t.protocol}</div>
-                    <TooltipStyled className="tooltip">{t.reason}</TooltipStyled>
-                  </TableRow>
-                ))}
-              </Table>
-            </>
-          )}
-        </Card>
-      </RightSection>
+      {/* Streaming Area */}
+      <Card>
+        <h3 style={{ marginTop: 0 }}>Streaming Area ({logType})</h3>
+        {loadingGeneral || loadingPolicy ? (
+          <p>Loading logs...</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <span>TIMESTAMP</span>
+              <span>SRC IP</span>
+              <span>DST IP</span>
+              <span>PROTOCOL</span>
+              <span>ACTION</span>
+            </TableHeader>
+            {displayedLogs.map((log, idx) => (
+              <TableRow key={idx}>
+                <div>{log.timestamp}</div>
+                <div>{log.srcip}</div>
+                <div>{log.dstip}</div>
+                <div>{log.protocol}</div>
+                <div>{log.action ?? '-'}</div>
+              </TableRow>
+            ))}
+          </Table>
+        )}
+      </Card>
     </PageContainer>
   );
 };
