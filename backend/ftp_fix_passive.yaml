@@ -1,0 +1,16 @@
+rules:
+  - platform: aws
+    target_sg: "FTPServerSG"
+    protocol: tcp
+    port: 21
+    source_sg: "BastionServerSG"
+    action: allow
+    comment: "FTP Control"
+
+  - platform: aws
+    target_sg: "FTPServerSG"
+    protocol: tcp
+    port: "50000-50009"
+    source_sg: "BastionServerSG"
+    action: allow
+    comment: "FTP Passive Data"

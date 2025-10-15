@@ -1,10 +1,11 @@
 // src/pages/Logs.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { MdInfo } from 'react-icons/md';
 
 // --- 데이터 목업(Mock Data) ---
+/*
 const logVolumeData = [
   { name: 'Jan', volume: 4000 }, { name: 'Feb', volume: 3000 },
   { name: 'Mar', volume: 2000 }, { name: 'Apr', volume: 2780 },
@@ -20,6 +21,7 @@ const streamingLogs = [
   { id: 3, timestamp: '09:16:02', sourceIP: '10.0.1.5', user: 'service-account', action: 'DB: QUERY', detail: "SELECT * FROM users;", aiComment: '[!] 웹서버 계정이 평소와 다른 `users` 테이블에 접근했습니다. 정보 유출 시도일 수 있습니다.' },
   { id: 4, timestamp: '09:18:21', sourceIP: '203.0.113.10', user: 'guest', action: 'WEB: GET', detail: "/search?q=' OR 1=1 --", aiComment: '[!] SQL Injection 공격 패턴이 탐지되었습니다.' },
 ];
+*/
 
 // --- Styled Components ---
 const PageContainer = styled.div`
@@ -134,70 +136,78 @@ const TooltipStyled = styled.div`
 
 // --- Logs 페이지 메인 컴포넌트 ---
 const Logs = () => {
+  const [logs, setLogs] = useState([]);
+  const [filter, setFilter] = useState("all");
+  const API_BASE = import.meta.env.VITE_API_BASE_URL;
+
+  // 필터 바뀔 때마다 API 호출
+  useEffect(() => {
+    let url = `${API_BASE}/api/logs?limit=50`;
+    if (filter !== "all") {
+      url += `&type=${filter}`;
+    }
+
+    fetch(url)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.status === "success") {
+          setLogs(data.data);
+        }
+      })
+      .catch((err) => console.error("API 호출 실패:", err));
+  }, [filter]);
+
   return (
     <PageContainer>
       <PageHeader>
-        <h1><span>Pages /</span> Logs</h1>
+        <h1>
+          <span>Pages /</span> Logs
+        </h1>
       </PageHeader>
 
+      {/* 필터 UI */}
       <FilterBar>
-        <Select>
-          <option>All Logs</option>
-          <option>FTP Server</option>
-          <option>Web Server (Apache)</option>
-          <option>Database (MySQL)</option>
+        <Select value={filter} onChange={(e) => setFilter(e.target.value)}>
+          <option value="all">All Logs</option>
+          <option value="onprem">Onprem Logs</option>
+          <option value="cloud">Cloud Logs</option>
         </Select>
-        <Select>
-          <option>Last 24 hours</option>
-          <option>Last 7 days</option>
-          <option>Last 30 days</option>
-        </Select>
-        <Button>Search</Button>
+        <Button onClick={() => setFilter(filter)}>Search</Button>
       </FilterBar>
 
       <Card>
-        <h3>Log Data Volume</h3>
-        <ResponsiveContainer width="100%" height={300}>
-          <AreaChart data={logVolumeData} margin={{ top: 20, right: 30, left: 0, bottom: 0 }}>
-            <defs>
-              <linearGradient id="colorVolume" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#01B574" stopOpacity={0.8}/>
-                <stop offset="95%" stopColor="#01B574" stopOpacity={0}/>
-              </linearGradient>
-            </defs>
-            <XAxis dataKey="name" stroke="#56577A" fontSize="12px" />
-            <YAxis stroke="#56577A" fontSize="12px" />
-            <Tooltip contentStyle={{ backgroundColor: '#1A1F37', border: '1px solid #2D2E5F' }} />
-            <Area type="monotone" dataKey="volume" stroke="#01B574" fillOpacity={1} fill="url(#colorVolume)" />
-          </AreaChart>
-        </ResponsiveContainer>
-      </Card>
-      
-      <Card>
         <StreamingAreaHeader>
           <h3>Streaming Area</h3>
-          <p><MdInfo />AI has detected {streamingLogs.length} suspicious logs.</p>
+          <p>
+            <MdInfo /> Showing {logs.length} logs.
+          </p>
         </StreamingAreaHeader>
         <Table>
           <TableHeader>
-            <span>TIMESTAMP</span>
-            <span>SOURCE IP</span>
-            <span>USER</span>
-            <span>ACTION</span>
-            <span>DETAIL</span>
-          </TableHeader>
-          {streamingLogs.map(log => (
-            <TableRow key={log.id}>
-              <div>{log.timestamp}</div>
-              <div>{log.sourceIP}</div>
-              <div>{log.user}</div>
-              <div>{log.action}</div>
-              <div className="detail-cell">{log.detail}</div>
-              <TooltipStyled className="tooltip">
-                {log.aiComment}
-              </TooltipStyled>
-            </TableRow>
-          ))}
+          <span>TIMESTAMP</span>
+          <span>TYPE</span>
+          <span>SRC IP</span>
+          <span>DST IP</span>
+          <span>SRC PORT</span>
+          <span>DST PORT</span>
+          <span>PROTOCOL</span>
+          <span>ACTION</span>
+        </TableHeader>
+        {logs.map((log) => (
+          <TableRow key={log.id}>
+            <div>{log.timestamp}</div>
+            <div>{log.log_type}</div>
+            <div>{log.srcip || "-"}</div>
+            <div>{log.dstip || "-"}</div>
+            <div>{log.srcport || "-"}</div>
+            <div>{log.dstport || "-"}</div>
+            <div>{log.protocol || "-"}</div>
+            <div className="detail-cell">{log.action || "-"}</div>
+            <TooltipStyled className="tooltip">
+              {JSON.stringify(log)}
+            </TooltipStyled>
+          </TableRow>
+        ))}
         </Table>
       </Card>
     </PageContainer>
