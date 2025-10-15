@@ -1,0 +1,9 @@
+rules:
+  - platform: on-premise
+    chain: FORWARD
+    protocol: tcp
+    destination_ip: "3.37.200.119"
+    port: 22
+    source_ip: "192.168.5.60/32"   # 인턴 PC IP 예시
+    action: ACCEPT
+    comment: "Intern PC → Bastion SSH"
